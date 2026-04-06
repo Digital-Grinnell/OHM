@@ -29,7 +29,7 @@ echo
 # Install / upgrade dependencies
 echo "Installing dependencies..."
 .venv/bin/python -m pip install --upgrade pip --quiet
-.venv/bin/python -m pip install -r requirements.txt --quiet
+.venv/bin/python -m pip install -r python_requirements.txt --quiet
 echo "✓ Dependencies installed"
 echo
 
