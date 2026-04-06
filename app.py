@@ -13,22 +13,17 @@ import shutil
 import warnings
 from datetime import datetime
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Transcription imports (openai-whisper + pyannote)
+# Transcription imports (openai-whisper)
 try:
     import whisper
-    from pyannote.audio import Pipeline
     import torch
     WHISPER_AVAILABLE = True
     # Suppress FP16 warning if no GPU
     warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
 except ImportError:
     WHISPER_AVAILABLE = False
-    logger.warning("Transcription libraries not available. Install with: pip install openai-whisper pyannote.audio torch torchaudio")
+    logger.warning("Transcription libraries not available. Install with: pip install openai-whisper torch torchaudio")
 
 # Configure logging
 DATA_DIR = Path.home() / "OHW-data"
@@ -633,16 +628,23 @@ def main(page: ft.Page):
             class ProgressCapture:
                 def __init__(self):
                     self.last_update = 0
+                    self.buffer = []
                     
                 def write(self, text):
                     import time
-                    # Update UI every 2 seconds to avoid too frequent updates
-                    current_time = time.time()
-                    if current_time - self.last_update > 2:
-                        if text.strip() and '%' in text:
-                            update_status(f"Transcribing: {text.strip()}")
-                            page.update()
-                            self.last_update = current_time
+                    # Collect output and update UI periodically
+                    if text.strip():
+                        self.buffer.append(text.strip())
+                        current_time = time.time()
+                        if current_time - self.last_update > 1:
+                            # Show the most recent meaningful output
+                            if self.buffer:
+                                display_text = self.buffer[-1]
+                                if len(display_text) > 100:
+                                    display_text = display_text[:100] + "..."
+                                update_status(f"Transcribing: {display_text}")
+                                page.update()
+                                self.last_update = current_time
                             
                 def flush(self):
                     pass
@@ -678,89 +680,17 @@ def main(page: ft.Page):
             
             add_log_message(f"Transcription complete. {len(transcript_segments)} segments found.")
             
-            # Step 2: Speaker diarization with pyannote.audio
-            add_log_message("Running speaker diarization...")
-            update_status("Identifying speaker changes...")
-            page.update()
-            
-            speaker_segments = []
-            hf_token = os.environ.get("HF_TOKEN")
-            try:
-                # Load diarization pipeline (try new 'token' parameter, fallback to old name)
-                try:
-                    diarization_pipeline = Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-3.1",
-                        use_auth_token=hf_token
-                    )
-                except TypeError:
-                    # Newer version uses 'token' instead of 'use_auth_token'
-                    if hf_token:
-                        from huggingface_hub import login
-                        login(token=hf_token)
-                    diarization_pipeline = Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-3.1"
-                    )
-                
-                if device == "cuda":
-                    diarization_pipeline.to(torch.device("cuda"))
-                
-                # Run diarization - returns speaker labels and time boundaries
-                diarization = diarization_pipeline(str(audio_to_transcribe))
-                
-                # Extract speaker segments
-                for turn, _, speaker in diarization.itertracks(yield_label=True):
-                    speaker_segments.append({
-                        "start": turn.start,
-                        "end": turn.end,
-                        "speaker": speaker
-                    })
-                
-                add_log_message(f"Speaker diarization complete. {len(speaker_segments)} speaker turns found.")
-                
-            except Exception as diarize_ex:
-                add_log_message(f"⚠️  Speaker diarization failed: {str(diarize_ex)}")
-                add_log_message("⚠️  Continuing without speaker labels. Set HF_TOKEN if needed.")
-                logger.warning(f"Diarization error: {str(diarize_ex)}")
-                # Create single speaker segment covering entire audio
-                speaker_segments = []
-            
-            # Step 3: Merge transcription segments with speaker labels by time overlap
-            add_log_message("Merging transcription with speaker labels...")
-            update_status("Merging transcription with speaker labels...")
-            page.update()
-            
-            def get_speaker_for_segment(seg_start, seg_end, speaker_segs):
-                """Find the speaker with maximum overlap with this segment."""
-                if not speaker_segs:
-                    return "SPEAKER_00"
-                
-                max_overlap = 0
-                best_speaker = "SPEAKER_00"
-                
-                for spk in speaker_segs:
-                    # Calculate overlap
-                    overlap_start = max(seg_start, spk["start"])
-                    overlap_end = min(seg_end, spk["end"])
-                    overlap = max(0, overlap_end - overlap_start)
-                    
-                    if overlap > max_overlap:
-                        max_overlap = overlap
-                        best_speaker = spk["speaker"]
-                
-                return best_speaker
-            
-            # Assign speaker to each transcript segment
+            # Add default speaker label to all segments
             final_segments = []
             for seg in transcript_segments:
-                speaker = get_speaker_for_segment(seg["start"], seg["end"], speaker_segments)
                 final_segments.append({
                     "start": seg["start"],
                     "end": seg["end"],
                     "text": seg["text"],
-                    "speaker": speaker
+                    "speaker": "SPEAKER_00"
                 })
             
-            # Step 4: Save JSON
+            # Save JSON
             add_log_message("Saving JSON transcript...")
             update_status("Saving transcript JSON...")
             page.update()
@@ -775,12 +705,12 @@ def main(page: ft.Page):
             
             add_log_message(f"✅ Created: {json_path.name}")
             add_log_message(f"✅ Transcription complete! Language: {detected_language}")
-            add_log_message(f"✅ Segments: {len(final_segments)} with speaker labels")
+            add_log_message(f"✅ Segments: {len(final_segments)}")
             add_log_message(f"✅ Output location: {output_directory}")
-            add_log_message("ℹ️  Edit the JSON file to fix speaker names, spelling, etc.")
+            add_log_message("ℹ️  Edit the JSON file to change speaker names from SPEAKER_00, fix spelling, etc.")
             add_log_message("ℹ️  Then use Function 3 to generate TXT and VTT outputs.")
             
-            success_msg = f"✅ Transcription complete! {len(final_segments)} segments with speaker labels."
+            success_msg = f"✅ Transcription complete! {len(final_segments)} segments."
             update_status(success_msg)
             
         except Exception as ex:

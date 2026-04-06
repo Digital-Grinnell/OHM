@@ -1,27 +1,16 @@
 # Function 2: Transcribe MP3 using OpenAI Whisper
 
 ## Purpose
-Transcribe MP3 audio files to text using OpenAI Whisper with pyannote.audio for speaker identification, generating a clean segment-level JSON file that can be edited before creating final outputs.
+Transcribe MP3 audio files to text using OpenAI Whisper, generating a clean segment-level JSON file that can be edited before creating final outputs.
 
 ## Requirements
 - **Python packages** must be installed:
   - `openai-whisper` - OpenAI's Whisper transcription model
-  - `pyannote.audio` - Speaker diarization
   - `torch` and `torchaudio` - PyTorch dependencies
-  - `python-dotenv` - Environment variable management
-  - Install with: `pip install openai-whisper pyannote.audio torch torchaudio python-dotenv`
+  - Install with: `pip install openai-whisper torch torchaudio`
 - **MP3 file** - Select an MP3 file (either standalone or one created by Function 1)
-- **Disk space** - Models require ~500MB total (base model + diarization)
+- **Disk space** - Whisper base model requires ~140MB
 - **Time** - Transcription takes 2-5 minutes per hour of audio
-- **Hugging Face Token** - Required for speaker diarization (free account at huggingface.co)
-  - Sign up at: https://huggingface.co/join
-  - Accept model terms at: https://huggingface.co/pyannote/speaker-diarization-3.1
-  - Get token from: https://huggingface.co/settings/tokens
-  - **Add to `.env` file**: Create a `.env` file in the project root with:
-    ```
-    HF_TOKEN=hf_your_token_here
-    ```
-  - The app will automatically load your token from this file
 
 ## Usage
 
@@ -36,13 +25,12 @@ Transcribe MP3 audio files to text using OpenAI Whisper with pyannote.audio for 
 5. The function will:
    - Load the OpenAI Whisper base model (automatic download on first use)
    - Transcribe the audio (auto-detects language, segment-level only)
-   - Run pyannote.audio speaker diarization (requires HF_TOKEN)
-   - Identify speaker changes and label them (SPEAKER_00, SPEAKER_01, etc.)
-   - Merge transcription with speaker labels by time overlap
+   - Add default speaker label SPEAKER_00 to all segments
    - Generate a single clean JSON file
 6. Monitor the status and log output for progress
 7. **Edit the JSON file** to:
-   - Change speaker labels (e.g., SPEAKER_00 → "John Doe")
+   - Change speaker labels from SPEAKER_00 to actual speaker names
+   - Add SPEAKER_01, SPEAKER_02, etc. where speakers change
    - Fix transcription errors or spelling
    - Adjust timestamps if needed
    - Correct text content
@@ -70,34 +58,31 @@ OpenAI Whisper generates **1 JSON file** that serves as the master transcript:
 - **Contents**: Complete transcription result including:
   - Detected language
   - Segmented text with timestamps
-  - **Speaker labels** (SPEAKER_00, SPEAKER_01, SPEAKER_02, etc.)
-  - Word-level timestamps
+  - **Speaker label** (defaults to SPEAKER_00 for all segments)
 - **Editable fields**:
-  - `speaker`: Change to real names (e.g., "John Doe", "Jane Smith")
+  - `speaker`: Change to real names and add SPEAKER_01, SPEAKER_02, etc. where speakers change
   - `text`: Fix transcription errors, spelling, punctuation
   - `start`/`end`: Adjust timing if needed
 - **Use case**: Master transcript that you edit before generating final outputs
 
 **Workflow:**
-1. Function 2 creates the JSON with speaker labels
-2. You edit the JSON file to perfect the transcript
+1. Function 2 creates the JSON with all segments labeled as SPEAKER_00
+2. You edit the JSON file to add speaker changes and perfect the transcript
 3. Function 3 reads your edited JSON and generates TXT and VTT outputs
 
 ## Technical Details
 
-### OpenAI Whisper + Pyannote.audio
+### OpenAI Whisper
 - **Model**: OpenAI Whisper base (~140MB)
-- **Diarization**: pyannote.audio 3.1 neural diarization (~400MB)
 - **Language**: Auto-detection (supports 99+ languages)
 - **Performance**: Processes audio in a few minutes on modern CPUs
-- **Speaker Diarization**: Identifies speaker change points (no name inference)
+- **Speaker Labels**: Manual - all segments default to SPEAKER_00 for editing
 
 ### Processing Workflow
 1. Loads OpenAI Whisper model (downloads on first use)
-2. Transcribes audio - returns segment-level text with timestamps (no word-level data)
-3. Loads pyannote.audio diarization pipeline (requires HF_TOKEN)
-4. Identifies speaker segments from audio (returns SPEAKER_00, SPEAKER_01, etc.)
-5. Merges transcription segments with speaker labels by time overlap
+2. Transcribes audio - returns segment-level text with timestamps
+3. Adds default SPEAKER_00 label to all segments
+4. Saves JSON for manual editing
 6. Saves clean JSON with: text, start, end, speaker for each segment
 
 ### Speaker Labels
@@ -117,71 +102,21 @@ OpenAI Whisper generates **1 JSON file** that serves as the master transcript:
 
 ## Common Issues
 
-### "No Hugging Face token found" or Diarization Failed
-- Speaker diarization requires HF authentication
-- Create free account at huggingface.co
-- Get token from Settings → Access Tokens
-- Accept terms for pyannote models: https://huggingface.co/pyannote/speaker-diarization-3.1
-- Add token to `.env` file in project root:
-  ```
-  HF_TOKEN=hf_your_token_here
-  ```
-- Restart the application
-- If diarization fails, function continues with single speaker (SPEAKER_00)
-
-### Poor speaker identification
-- Check audio quality (reduce background noise)
-- Ensure speakers have distinct voices
-- Diarization works best with 2-4 speakers
-- Consider re-recording if audio is very poor
-
-### Slow processing
-- First run downloads models (~500MB)
-- GPU acceleration recommended for long audio
-- Disable diarization if you don't need speaker labels
-
-### JSON editing tips
-- Use a proper JSON editor or VS Code
-- Maintain JSON structure (commas, brackets, quotes)
-- Don't change field names, only values
-- Save file with UTF-8 encoding
-
-## Expected Results
-
-A successful transcription will:
-- Load the Whisper model (with progress updates)
-- Transcribe the audio and detect the language
-- Create 5 output files in the output directory
-- Log each file creation
-- Display language detected and completion status
-
-Example output log:
-```
-✅ Created: dg_1712345678.txt
-✅ Created: dg_1712345678_transcript.json
-✅ Created: dg_1712345678.vtt
-✅ Created: dg_1712345678.srt
-✅ Created: dg_1712345678.docx
-✅ Transcription complete! Language detected: English
-```
-
-## Common Issues
-
 ### Whisper not installed
 **Problem**: The system cannot find the Whisper libraries
 **Solution**: Install required packages:
 ```bash
-pip install openai-whisper python-docx torch torchaudio
+pip install openai-whisper torch torchaudio
 ```
 
 ### Not an MP3 file
 **Problem**: Selected file is a WAV or other format
 **Solution**: Only MP3 files can be transcribed with this function. Convert WAV to MP3 using Function 1 first.
 
-### Transcription files already exist
-**Problem**: Output files already exist in the output directory
+### Transcription JSON already exists
+**Problem**: Output JSON already exists in the output directory
 **Result**: The function skips transcription to avoid overwriting existing work
-**Solution**: If you want to retranscribe, manually delete the existing transcription files in the output directory
+**Solution**: If you want to retranscribe, manually delete the existing JSON file in the output directory
 
 ### Slow transcription
 **Problem**: Transcription takes longer than expected
@@ -198,14 +133,37 @@ pip install openai-whisper python-docx torch torchaudio
 - Retry the operation
 - Manually download from: https://github.com/openai/whisper
 
+### JSON editing tips
+- Use a proper JSON editor or VS Code
+- Maintain JSON structure (commas, brackets, quotes)
+- Don't change field names, only values
+- Save file with UTF-8 encoding
+- To add speaker changes, change `SPEAKER_00` to different speaker names/numbers at appropriate segments
+
+## Expected Results
+
+A successful transcription will:
+- Load the Whisper model (with progress updates)
+- Transcribe the audio and detect the language
+- Create JSON file with SPEAKER_00 labels
+- Log file creation and completion status
+- Be ready for manual editing
+
+Example output log:
+```
+✅ Created: dg_1712345678_transcript.json
+✅ Transcription complete! Language: en
+✅ Segments: 45
+ℹ️  Edit the JSON file to change speaker names from SPEAKER_00, fix spelling, etc.
+ℹ️  Then use Function 3 to generate TXT and VTT outputs.
+```
+
 ## Notes
 - Whisper model is downloaded once and cached locally
 - Transcription quality is excellent for clear speech
 - Background noise may affect accuracy
-- Multiple speakers are transcribed but not automatically labeled
+- All segments default to SPEAKER_00 - edit JSON to add speaker changes
 - Timestamps are approximate (±1 second)
 - The base model provides a good balance of speed and accuracy
-- All output formats contain the same transcription, just formatted differently
-- Transcription outputs are suitable for Digital.Grinnell oral history archival workflows
-- The DOCX format is recommended for human editing and annotation
-- VTT and SRT formats are ideal if you plan to create video versions
+- JSON is meant to be edited before final TXT/VTT generation
+- All processing is local - audio never leaves your computer
