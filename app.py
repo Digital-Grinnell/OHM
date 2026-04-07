@@ -1328,20 +1328,22 @@ def main(page: ft.Page):
             if DATA_DIR.exists():
                 for dir_path in DATA_DIR.iterdir():
                     if dir_path.is_dir() and ' - dg_' in dir_path.name:
-                        # Extract epoch from directory name
+                        # Extract basename and epoch from directory name
                         parts = dir_path.name.split(' - dg_')
                         if len(parts) == 2:
+                            original_basename = parts[0]  # e.g., "Darrell Hall"
                             epoch = parts[1]
-                            base_name = f"dg_{epoch}"
+                            dg_name = f"dg_{epoch}"
                             
-                            processed_files[base_name] = {
+                            processed_files[original_basename] = {
                                 'directory': dir_path,
-                                'wav': (dir_path / f"{base_name}.wav").exists(),
-                                'mp3': (dir_path / f"{base_name}.mp3").exists(),
-                                'json': (dir_path / f"{base_name}_transcript.json").exists(),
-                                'txt': (dir_path / f"{base_name}.txt").exists(),
-                                'vtt': (dir_path / f"{base_name}.vtt").exists(),
-                                'pdf': (dir_path / f"{base_name}.pdf").exists(),
+                                'dg_name': dg_name,
+                                'wav': (dir_path / f"{dg_name}.wav").exists(),
+                                'mp3': (dir_path / f"{dg_name}.mp3").exists(),
+                                'json': (dir_path / f"{dg_name}_transcript.json").exists(),
+                                'txt': (dir_path / f"{dg_name}.txt").exists(),
+                                'vtt': (dir_path / f"{dg_name}.vtt").exists(),
+                                'pdf': (dir_path / f"{dg_name}.pdf").exists(),
                             }
             
             # Calculate statistics
@@ -1421,7 +1423,7 @@ This report tracks the processing status of audio files from the input directory
             if complete_files:
                 report_content += f"### ✅ Complete ({len(complete_files)} files)\n\n"
                 for name, info in complete_files:
-                    report_content += f"**{name}**  \n"
+                    report_content += f"**{name}** (`{info['dg_name']}`)  \n"
                     report_content += f"- ✅ MP3, JSON, TXT, VTT, PDF\n"
                     report_content += f"- Location: `{info['directory'].name}`\n\n"
             
@@ -1440,7 +1442,7 @@ This report tracks the processing status of audio files from the input directory
                     if not info['vtt']: missing.append('VTT')
                     if not info['pdf']: missing.append('PDF')
                     
-                    report_content += f"**{name}**  \n"
+                    report_content += f"**{name}** (`{info['dg_name']}`)  \n"
                     report_content += f"- Missing: {', '.join(missing)}\n"
                     report_content += f"- Location: `{info['directory'].name}`\n\n"
             
