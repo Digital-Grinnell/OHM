@@ -3,3 +3,6 @@ flet-desktop==0.25.2
 openai-whisper
 torch>=2.0.0
 torchaudio>=2.0.0
+python-docx
+docx2pdf
+reportlab

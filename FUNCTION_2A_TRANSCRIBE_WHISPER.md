@@ -3,6 +3,8 @@
 ## Purpose
 Transcribe MP3 audio files to text using OpenAI Whisper, generating a clean segment-level JSON file that can be edited before creating final outputs.
 
+**Note:** This documentation describes the OpenAI Whisper mode of Function 2. Select this mode using the Transcription Mode radio buttons in the app.
+
 ## Requirements
 - **Python packages** must be installed:
   - `openai-whisper` - OpenAI's Whisper transcription model
@@ -14,20 +16,21 @@ Transcribe MP3 audio files to text using OpenAI Whisper, generating a clean segm
 
 ## Usage
 
-1. In the **Inputs** section, click **Browse...** to select a directory containing your audio files
-2. Click **List WAV and MP3 Files** to scan the directory and all subdirectories
-3. From the **Select Audio File** dropdown, choose the MP3 file you want to transcribe
+1. Select **OpenAI Whisper** in the **Transcription Mode** radio buttons
+2. In the **Inputs** section, click **Browse...** to select a directory containing your audio files
+3. Click **List WAV and MP3 Files** to scan the directory and all subdirectories
+4. From the **Select Audio File** dropdown, choose the MP3 file you want to transcribe
    - Files are displayed with relative paths (e.g., `subdir/file.mp3`)
    - The app searches `~/OHW-data/` for an existing directory matching the file's basename
    - If found, it reuses that directory and epoch timestamp
    - If not found, it creates a new directory named `<basename> - dg_<epoch>`
-4. In the **Active Functions** dropdown, select **"📝 2: Transcribe MP3 using Whisper"**
-5. The function will:
+5. In the **Active Functions** dropdown, select **"2: Transcribe with Selected Mode"**
+6. The function will:
    - Load the OpenAI Whisper base model (automatic download on first use)
    - Transcribe the audio (auto-detects language, segment-level only)
    - Add default speaker label SPEAKER_00 to all segments
    - Generate a single clean JSON file
-6. Monitor the status and log output for progress
+7. Monitor the status and log output for progress
 7. **Edit the JSON file** to:
    - Change speaker labels from SPEAKER_00 to actual speaker names
    - Add SPEAKER_01, SPEAKER_02, etc. where speakers change
@@ -66,9 +69,9 @@ OpenAI Whisper generates **1 JSON file** that serves as the master transcript:
 - **Use case**: Master transcript that you edit before generating final outputs
 
 **Workflow:**
-1. Function 2 creates the JSON with all segments labeled as SPEAKER_00
+1. Function 2a creates the JSON with all segments labeled as SPEAKER_00
 2. You edit the JSON file to add speaker changes and perfect the transcript
-3. Function 3 reads your edited JSON and generates TXT and VTT outputs
+3. Function 4 reads your edited JSON and generates TXT and VTT outputs
 
 ## Technical Details
 

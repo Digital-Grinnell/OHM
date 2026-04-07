@@ -1,27 +1,28 @@
-# Function 3: Generate TXT & VTT from JSON
+# Function 4: Generate TXT, VTT & PDF from JSON
 
 ## Purpose
-Generate final output files (TXT and VTT) from the edited JSON transcript created by Function 2. This allows you to perfect the transcript—fixing speaker names, correcting transcription errors, and adjusting content—before creating the final deliverable files.
+Generate final output files (TXT, VTT, and PDF) from the edited JSON transcript created by Function 2a or Function 2b. This allows you to perfect the transcript—fixing speaker names, correcting transcription errors, and adjusting content—before creating the final deliverable files.
 
 ## Requirements
-- **Prerequisite**: Function 2 must have been run to create the initial JSON transcript
+- **Prerequisite**: Function 2a or Function 2b must have been run to create the initial JSON transcript
 - **JSON file**: `dg_<epoch>_transcript.json` must exist in the output directory
 - **Edited content**: You should have edited the JSON to fix speaker names, spelling, etc.
 
 ## Usage
 
-1. **First, run Function 2** to create the initial JSON transcript with speaker identification
+1. **First, run Function 2a or Function 2b** to create the initial JSON transcript
 2. **Edit the JSON file** located in `~/OHW-data/<basename> - dg_<epoch>/dg_<epoch>_transcript.json`:
    - Change speaker labels (e.g., `"speaker": "SPEAKER_00"` → `"speaker": "John Doe"`)
    - Fix transcription errors in the `"text"` fields
    - Correct spelling and punctuation
    - Adjust timestamps if necessary
 3. **Save the edited JSON** (maintain proper JSON format)
-4. In the **Active Functions** dropdown, select **"📄 3: Generate TXT & VTT from JSON"**
+4. In the **Active Functions** dropdown, select **"📄 4: Generate TXT, VTT & PDF from JSON"**
 5. The function will:
    - Read your edited JSON file
    - Generate a formatted TXT file with speaker labels
    - Generate a VTT subtitle file with speaker tags
+   - Generate a formatted PDF with timestamps and speaker labels
 6. Monitor the status and log output for progress
 
 ## Output Directory
@@ -37,27 +38,31 @@ For example:
 ~/OHW-data/interview_john_doe - dg_1712345678/
   ├── dg_1712345678.wav                  (from Function 1)
   ├── dg_1712345678.mp3                  (from Function 1)
-  ├── dg_1712345678_transcript.json      (from Function 2, YOU EDIT THIS)
-  ├── dg_1712345678.txt                  (from Function 3)
-  └── dg_1712345678.vtt                  (from Function 3)
+  ├── dg_1712345678_transcript.json      (from Function 2a/2b, YOU EDIT THIS)
+  ├── dg_1712345678.txt                  (from Function 4)
+  ├── dg_1712345678.vtt                  (from Function 4)
+  └── dg_1712345678.pdf                  (from Function 4)
 ```
 
 ## Output Files
 
-Function 3 generates **2 final output files** from your edited JSON:
+Function 4 generates **3 final output files** from your edited JSON:
 
 ### 1. Plain Text (.txt)
 - **Filename**: `dg_<epoch>.txt`
-- **Contents**: Formatted transcript with speaker labels
+- **Contents**: Formatted transcript with timestamps and speaker labels
 - **Format**:
   ```
-  John Doe:
+  Audio file
+  dg_1775499960.mp3
+
+  Transcript
+
+  [00:00:00] John Doe
   Hello, welcome to the interview.
-  I'm glad to be here today.
-  
-  Jane Smith:
+
+  [00:00:05] Jane Smith
   Thank you for having me.
-  It's a pleasure to discuss this topic.
   ```
 - **Use case**: Easy reading, printing, sharing, archival
 
@@ -75,6 +80,31 @@ Function 3 generates **2 final output files** from your edited JSON:
   <v Jane Smith>Thank you for having me.</v>
   ```
 - **Use case**: HTML5 video subtitles, web accessibility, video editing
+
+### 3. PDF (.pdf)
+- **Filename**: `dg_<epoch>.pdf`
+- **Contents**: Formatted transcript with timestamps and speaker labels
+- **Format**:
+  ```
+  Audio file
+  dg_1775499960.mp3
+
+  Transcript
+
+  [00:00:00] John Doe
+  Hello, welcome to the interview.
+
+  [00:00:05] Jane Smith
+  Thank you for having me.
+  ```
+- **Features**:
+  - Audio file header with MP3 filename
+  - Transcript header section
+  - Timestamps in [HH:MM:SS] format
+  - Speaker names on the same line as timestamp
+  - Single line break before text
+  - Double spacing between transcript sections
+- **Use case**: Professional documents, archival, distribution, printing
 
 ## JSON Structure
 
