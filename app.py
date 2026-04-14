@@ -308,13 +308,36 @@ def main(page: ft.Page):
         value=""
     )
 
-    # File selection dropdown
-    file_selection_dropdown = ft.Dropdown(
+    # Audio file selector: read-only TextField + pick button (avoids Flutter ink layer artifacts)
+    file_selection_field = ft.TextField(
         label="Select Audio File",
-        hint_text="Click 'List WAV and MP3 Files' to populate",
-        width=600,
-        options=[],
+        hint_text="Select a directory to populate",
+        width=545,
+        read_only=True,
+        value="",
+        hint_style=ft.TextStyle(color=ft.Colors.RED_400),
     )
+
+    pick_file_dialog_list = ft.Column(
+        controls=[],
+        scroll=ft.ScrollMode.AUTO,
+        spacing=0,
+    )
+
+    pick_file_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Select Audio File"),
+        content=ft.Container(
+            content=pick_file_dialog_list,
+            height=400,
+            width=600,
+        ),
+        actions=[
+            ft.TextButton("Cancel", on_click=lambda e: _close_pick_file_dialog(e)),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.overlay.append(pick_file_dialog)
 
     # Initialize with last used input directory
     last_dir = storage.get_ui_state("last_input_dir")
@@ -351,14 +374,15 @@ def main(page: ft.Page):
             output_directory_field.value = str(current_directory)
             os.makedirs(output_base_dir, exist_ok=True)
 
-        # Clear file list
+        # Clear file selection then auto-scan
         audio_files = []
-        file_selection_dropdown.options = []
-        file_selection_dropdown.value = None
+        file_selection_field.value = ""
+        file_selection_field.hint_text = "Select a directory to populate"
 
         add_log_message(f"Directory selected: {current_directory}")
         update_status(f"Directory: {current_directory.name}")
         page.update()
+        _scan_audio_files()
 
     directory_picker.on_result = on_directory_picked
 
@@ -391,18 +415,35 @@ def main(page: ft.Page):
             initial_directory=initial_dir if os.path.isdir(initial_dir) else None,
         )
 
-    def on_pick_output_directory_click(e):
-        """Open directory picker for working/output directory."""
-        # Start in last output dir, or last input dir, or home
-        initial_dir = (
-            storage.get_ui_state("last_output_dir")
-            or storage.get_ui_state("last_input_dir")
-            or str(Path.home())
-        )
-        output_directory_picker.get_directory_path(
-            dialog_title="Select working/output directory (OHW-data subfolder will be created here)",
-            initial_directory=initial_dir if os.path.isdir(initial_dir) else None,
-        )
+    def _scan_audio_files():
+        """Scan the current input directory for WAV/MP3 files and populate the dropdown."""
+        nonlocal audio_files
+        if not current_directory or not current_directory.exists():
+            return
+        try:
+            audio_files = [
+                f for f in current_directory.rglob("*")
+                if f.is_file()
+                and f.suffix.lower() in (".wav", ".mp3")
+                and "Merged" not in f.relative_to(current_directory).parts
+            ]
+            audio_files.sort(key=lambda p: str(p.relative_to(current_directory)).lower())
+
+            if not audio_files:
+                update_status("No WAV or MP3 files found in directory or subdirectories", is_error=True)
+                add_log_message(f"No audio files found in {current_directory} or its subdirectories")
+                file_selection_field.value = ""
+                file_selection_field.hint_text = "No audio files found in selected directory"
+                page.update()
+                return
+
+            file_selection_field.hint_text = f"Select from {len(audio_files)} found audio file(s)"
+            add_log_message(f"Found {len(audio_files)} audio file(s) in {current_directory.name} and subdirectories")
+            update_status(f"Found {len(audio_files)} audio file(s)")
+            page.update()
+        except Exception as ex:
+            update_status(f"Error listing files: {str(ex)}", is_error=True)
+            add_log_message(f"Error listing files: {str(ex)}")
 
     def on_list_files_click(e):
         """List all WAV and MP3 files in the selected directory and subdirectories."""
@@ -428,20 +469,12 @@ def main(page: ft.Page):
             if not audio_files:
                 update_status("No WAV or MP3 files found in directory or subdirectories", is_error=True)
                 add_log_message(f"No audio files found in {current_directory} or its subdirectories")
-                file_selection_dropdown.options = []
-                file_selection_dropdown.value = None
+                file_selection_field.value = ""
+                file_selection_field.hint_text = "No audio files found in selected directory"
                 page.update()
                 return
 
-            # Populate dropdown with relative paths for better visibility
-            file_selection_dropdown.options = [
-                ft.dropdown.Option(
-                    key=str(f), 
-                    text=str(f.relative_to(current_directory))
-                ) for f in audio_files
-            ]
-            file_selection_dropdown.value = None
-            
+            file_selection_field.hint_text = f"Select from {len(audio_files)} found audio file(s)"
             add_log_message(f"Found {len(audio_files)} audio file(s) in {current_directory.name} and subdirectories")
             update_status(f"Found {len(audio_files)} audio file(s)")
             page.update()
@@ -450,16 +483,28 @@ def main(page: ft.Page):
             update_status(f"Error listing files: {str(ex)}", is_error=True)
             add_log_message(f"Error listing files: {str(ex)}")
 
-    def on_file_selected(e):
-        """Called when user selects a file from dropdown."""
+    def on_pick_output_directory_click(e):
+        """Open directory picker for working/output directory."""
+        initial_dir = (
+            storage.get_ui_state("last_output_dir")
+            or storage.get_ui_state("last_input_dir")
+            or str(Path.home())
+        )
+        output_directory_picker.get_directory_path(
+            dialog_title="Select working/output directory (OHW-data subfolder will be created here)",
+            initial_directory=initial_dir if os.path.isdir(initial_dir) else None,
+        )
+
+    def _handle_file_selection(path_str):
+        """Handle selection of an audio file (shared logic for dialog picker)."""
         nonlocal selected_file, output_directory, current_epoch
-        
-        if e.control.value:
-            selected_file = Path(e.control.value)
-            
+
+        if path_str:
+            selected_file = Path(path_str)
+
             # Extract basename (filename without extension)
             basename = selected_file.stem
-            
+
             # Search for existing directory with this basename
             import time
             import re
@@ -540,7 +585,33 @@ def main(page: ft.Page):
             output_directory = None
             current_epoch = None
 
-    file_selection_dropdown.on_change = on_file_selected
+    def _close_pick_file_dialog(e=None):
+        pick_file_dialog.open = False
+        page.update()
+
+    def on_pick_file_click(e):
+        """Open dialog to pick an audio file from the scanned list."""
+        if not audio_files:
+            update_status("No audio files found. Select a directory first.", is_error=True)
+            return
+
+        def on_file_choice(ev):
+            chosen = ev.control.data
+            file_selection_field.value = str(chosen.relative_to(current_directory))
+            pick_file_dialog.open = False
+            page.update()
+            _handle_file_selection(str(chosen))
+
+        pick_file_dialog_list.controls = [
+            ft.ListTile(
+                title=ft.Text(str(f.relative_to(current_directory)), no_wrap=True),
+                data=f,
+                on_click=on_file_choice,
+            )
+            for f in audio_files
+        ]
+        pick_file_dialog.open = True
+        page.update()
 
     # -------------------------------------------------------- function handlers
 
@@ -2792,6 +2863,89 @@ For each audio file:
 
         return options
 
+    # ---- Collapsible directory controls
+    dirs_expanded = True
+
+    dirs_body_column = ft.Column(
+        [
+            ft.Text("Input Directory", size=14, weight=ft.FontWeight.W_500),
+            ft.Row(
+                [
+                    input_directory_field,
+                    ft.ElevatedButton(
+                        "Browse...",
+                        icon=ft.Icons.FOLDER_OPEN,
+                        on_click=on_pick_directory_click,
+                    ),
+                    ft.ElevatedButton(
+                        "Rescan",
+                        icon=ft.Icons.REFRESH,
+                        on_click=lambda e: _scan_audio_files(),
+                        tooltip="Re-scan the input directory for WAV/MP3 files",
+                    ),
+                ],
+                spacing=10,
+            ),
+            ft.Text("Working/Output Directory", size=14, weight=ft.FontWeight.W_500),
+            ft.Column(
+                [
+                    ft.Row(
+                        [
+                            output_directory_field,
+                            ft.ElevatedButton(
+                                "Browse...",
+                                icon=ft.Icons.FOLDER_OPEN,
+                                on_click=on_pick_output_directory_click,
+                            ),
+                        ],
+                        spacing=10,
+                    ),
+                    ft.Text(
+                        "An 'OHW-data' subfolder will be created inside the selected working/output directory.",
+                        size=11,
+                        italic=True,
+                        color=ft.Colors.GREY_600,
+                    ),
+                ],
+                spacing=2,
+            ),
+        ],
+        spacing=8,
+    )
+
+    inputs_header_row = ft.Row(
+        [
+            ft.Text("Inputs", size=18, weight=ft.FontWeight.BOLD),
+        ],
+        spacing=4,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+    )
+
+    inputs_inner_column = ft.Column(
+        [inputs_header_row, dirs_body_column],
+        spacing=8,
+    )
+
+    def on_toggle_dirs(e):
+        nonlocal dirs_expanded
+        dirs_expanded = not dirs_expanded
+        if dirs_expanded:
+            inputs_inner_column.controls = [inputs_header_row, dirs_body_column]
+        else:
+            inputs_inner_column.controls = [inputs_header_row]
+        dirs_toggle_button.icon = (
+            ft.Icons.EXPAND_LESS if dirs_expanded else ft.Icons.EXPAND_MORE
+        )
+        page.update()
+
+    dirs_toggle_button = ft.IconButton(
+        icon=ft.Icons.EXPAND_LESS,
+        icon_size=20,
+        tooltip="Show/hide directory controls",
+        on_click=on_toggle_dirs,
+    )
+    inputs_header_row.controls.append(dirs_toggle_button)
+
     # ------------------------------------------------------------------ layout
 
     page.add(
@@ -2813,58 +2967,25 @@ For each audio file:
 
                 # ---- Inputs section
                 ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Text("Inputs", size=18, weight=ft.FontWeight.BOLD),
-                            ft.Text(
-                                "Input Directory",
-                                size=14,
-                                weight=ft.FontWeight.W_500,
-                            ),
-                            ft.Row(
-                                [
-                                    input_directory_field,
-                                    ft.ElevatedButton(
-                                        "Browse...",
-                                        icon=ft.Icons.FOLDER_OPEN,
-                                        on_click=on_pick_directory_click,
-                                    ),
-                                ],
-                                spacing=10,
-                            ),
-                            ft.Text(
-                                "Working/Output Directory",
-                                size=14,
-                                weight=ft.FontWeight.W_500,
-                            ),
-                            ft.Row(
-                                [
-                                    output_directory_field,
-                                    ft.ElevatedButton(
-                                        "Browse...",
-                                        icon=ft.Icons.FOLDER_OPEN,
-                                        on_click=on_pick_output_directory_click,
-                                    ),
-                                ],
-                                spacing=10,
-                            ),
-                            ft.Text(
-                                "An 'OHW-data' subfolder will be created inside the selected working/output directory.",
-                                size=11,
-                                italic=True,
-                                color=ft.Colors.GREY_600,
-                            ),
-                            ft.ElevatedButton(
-                                "List WAV and MP3 Files",
-                                icon=ft.Icons.REFRESH,
-                                on_click=on_list_files_click,
-                                tooltip="Scan directory and all subdirectories for audio files",
-                            ),
-                            file_selection_dropdown,
-                        ],
-                        spacing=8,
-                    ),
+                    content=inputs_inner_column,
                     padding=5,
+                ),
+
+                # ---- Audio file selection (fixed position, always visible)
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            file_selection_field,
+                            ft.ElevatedButton(
+                                "Pick...",
+                                icon=ft.Icons.AUDIO_FILE,
+                                on_click=on_pick_file_click,
+                                tooltip="Pick an audio file from the scanned list",
+                            ),
+                        ],
+                        spacing=10,
+                    ),
+                    padding=ft.padding.only(left=5, right=5, bottom=5),
                 ),
 
                 ft.Divider(height=5),
@@ -3103,6 +3224,10 @@ For each audio file:
     reviewed_by.value = saved_names[5] if len(saved_names) > 5 else ""
     
     page.update()
+
+    # Auto-scan on startup if a directory was restored from persistence
+    if current_directory and current_directory.exists():
+        _scan_audio_files()
 
     logger.info("UI initialised successfully")
     add_log_message("OHW application ready. Select a function to begin.")
