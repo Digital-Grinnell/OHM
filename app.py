@@ -74,6 +74,9 @@ logging.getLogger("flet_desktop").setLevel(logging.WARNING)
 # Persistent storage file
 PERSISTENCE_FILE = DATA_DIR / "persistent.json"
 
+# Filename used when copying a permission/consent PDF into an output directory
+PERMISSION_FORM_FILENAME = "permission_form.pdf"
+
 
 class PersistentStorage:
     """Handle persistent storage of UI state and function usage."""
@@ -284,6 +287,10 @@ def main(page: ft.Page):
     output_base_dir: Path = DATA_DIR
     output_dir_customized: bool = False  # True once user manually picks a working directory
 
+    # Permission PDF state
+    selected_permission_pdf: Path | None = None
+    pdf_files: list[Path] = []
+
     # Directory pickers
     directory_picker = ft.FilePicker()
     output_directory_picker = ft.FilePicker()
@@ -339,6 +346,37 @@ def main(page: ft.Page):
     )
     page.overlay.append(pick_file_dialog)
 
+    # Permission PDF selector: read-only TextField + pick button
+    pdf_selection_field = ft.TextField(
+        label="Select Permission PDF",
+        hint_text="Select a directory to populate",
+        width=545,
+        read_only=True,
+        value="",
+        hint_style=ft.TextStyle(color=ft.Colors.GREY_500),
+    )
+
+    pick_pdf_dialog_list = ft.Column(
+        controls=[],
+        scroll=ft.ScrollMode.AUTO,
+        spacing=0,
+    )
+
+    pick_pdf_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Select Permission PDF"),
+        content=ft.Container(
+            content=pick_pdf_dialog_list,
+            height=400,
+            width=600,
+        ),
+        actions=[
+            ft.TextButton("Cancel", on_click=lambda e: _close_pick_pdf_dialog(e)),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.overlay.append(pick_pdf_dialog)
+
     # Initialize with last used input directory
     last_dir = storage.get_ui_state("last_input_dir")
     if last_dir and os.path.isdir(last_dir):
@@ -359,7 +397,7 @@ def main(page: ft.Page):
 
     def on_directory_picked(e: ft.FilePickerResultEvent):
         """Called when user selects an input directory."""
-        nonlocal current_directory, audio_files, output_base_dir
+        nonlocal current_directory, audio_files, output_base_dir, selected_permission_pdf, pdf_files
         if not e.path:
             add_log_message("Directory selection cancelled")
             return
@@ -379,10 +417,17 @@ def main(page: ft.Page):
         file_selection_field.value = ""
         file_selection_field.hint_text = "Select a directory to populate"
 
+        # Clear permission PDF selection when directory changes
+        selected_permission_pdf = None
+        pdf_files = []
+        pdf_selection_field.value = ""
+        pdf_selection_field.hint_text = "Select a directory to populate"
+
         add_log_message(f"Directory selected: {current_directory}")
         update_status(f"Directory: {current_directory.name}")
         page.update()
         _scan_audio_files()
+        _scan_pdf_files()
 
     directory_picker.on_result = on_directory_picked
 
@@ -601,6 +646,7 @@ def main(page: ft.Page):
             pick_file_dialog.open = False
             page.update()
             _handle_file_selection(str(chosen))
+            _copy_permission_pdf_to_output()
 
         pick_file_dialog_list.controls = [
             ft.ListTile(
@@ -611,6 +657,69 @@ def main(page: ft.Page):
             for f in audio_files
         ]
         pick_file_dialog.open = True
+        page.update()
+
+    def _scan_pdf_files():
+        """Scan the current input directory for PDF files and update the PDF picker."""
+        nonlocal pdf_files
+        if not current_directory or not current_directory.exists():
+            return
+        try:
+            pdf_files = sorted(
+                [f for f in current_directory.rglob("*.pdf") if f.is_file()],
+                key=lambda p: str(p.relative_to(current_directory)).lower(),
+            )
+            if pdf_files:
+                pdf_selection_field.hint_text = f"Select from {len(pdf_files)} found PDF(s)"
+            else:
+                pdf_selection_field.hint_text = "No PDF files found in selected directory"
+            page.update()
+        except Exception as ex:
+            add_log_message(f"Error scanning PDFs: {str(ex)}")
+
+    def _copy_permission_pdf_to_output():
+        """Copy the selected permission PDF into the current output directory."""
+        if not selected_permission_pdf or not output_directory:
+            return
+        try:
+            dest = output_directory / PERMISSION_FORM_FILENAME
+            shutil.copy2(selected_permission_pdf, dest)
+            add_log_message(
+                f"✅ Copied permission PDF: {selected_permission_pdf.name} → {PERMISSION_FORM_FILENAME}"
+            )
+        except Exception as ex:
+            add_log_message(f"⚠️  Could not copy permission PDF: {ex}")
+
+    def _close_pick_pdf_dialog(e=None):
+        pick_pdf_dialog.open = False
+        page.update()
+
+    def on_pick_pdf_click(e):
+        """Open dialog to pick a permission PDF from the scanned list."""
+        if not pdf_files:
+            _scan_pdf_files()
+        if not pdf_files:
+            update_status("No PDF files found. Select a directory first.", is_error=True)
+            return
+
+        def on_pdf_choice(ev):
+            nonlocal selected_permission_pdf
+            chosen = ev.control.data
+            selected_permission_pdf = chosen
+            pdf_selection_field.value = chosen.name
+            pick_pdf_dialog.open = False
+            page.update()
+            _copy_permission_pdf_to_output()
+
+        pick_pdf_dialog_list.controls = [
+            ft.ListTile(
+                title=ft.Text(str(f.relative_to(current_directory)), no_wrap=True),
+                data=f,
+                on_click=on_pdf_choice,
+            )
+            for f in pdf_files
+        ]
+        pick_pdf_dialog.open = True
         page.update()
 
     # -------------------------------------------------------- function handlers
@@ -1296,6 +1405,13 @@ def main(page: ft.Page):
                     "segment_count": len(final_segments),
                     "speaker_mapping": build_speaker_mapping(get_speaker_names(), get_reviewed_by()),
                     "source_audio": collect_audio_file_info(audio_to_transcribe, selected_file, output_directory),
+                    **(
+                        {"permission_form": {
+                            "original_filename": selected_permission_pdf.name,
+                            "saved_as": PERMISSION_FORM_FILENAME,
+                        }}
+                        if selected_permission_pdf else {}
+                    ),
                 },
             )
 
@@ -1672,6 +1788,13 @@ def main(page: ft.Page):
                         collect_audio_file_info(source_audio, selected_source, out_dir)
                         if source_audio and selected_source
                         else {"note": "source file info not available"}
+                    ),
+                    **(
+                        {"permission_form": {
+                            "original_filename": selected_permission_pdf.name,
+                            "saved_as": PERMISSION_FORM_FILENAME,
+                        }}
+                        if selected_permission_pdf else {}
                     ),
                 },
             )
@@ -2682,6 +2805,17 @@ For each audio file:
                 parts = [p for p in (machine_display, os_display) if p]
                 narrative += f" Processing was performed on a {', '.join(parts)} system."
 
+            # Permission / consent form
+            perm_form = notes.get("permission_form")
+            if perm_form:
+                orig_name = perm_form.get("original_filename", "")
+                saved_as = perm_form.get("saved_as", PERMISSION_FORM_FILENAME)
+                if orig_name:
+                    narrative += (
+                        f" \"{orig_name}\" was specified as the permissions form for this"
+                        f" object and is saved as '{saved_as}'."
+                    )
+
             notes["narrative"] = narrative.strip()
         except Exception:
             notes["narrative"] = "Narrative generation failed."
@@ -2908,6 +3042,19 @@ For each audio file:
                     ),
                 ],
                 spacing=2,
+            ),
+            ft.Text("Select Permission PDF", size=14, weight=ft.FontWeight.W_500),
+            ft.Row(
+                [
+                    pdf_selection_field,
+                    ft.ElevatedButton(
+                        "Pick...",
+                        icon=ft.Icons.PICTURE_AS_PDF,
+                        on_click=on_pick_pdf_click,
+                        tooltip="Pick a permission/consent PDF from the input directory",
+                    ),
+                ],
+                spacing=10,
             ),
         ],
         spacing=8,
@@ -3228,6 +3375,7 @@ For each audio file:
     # Auto-scan on startup if a directory was restored from persistence
     if current_directory and current_directory.exists():
         _scan_audio_files()
+        _scan_pdf_files()
 
     logger.info("UI initialised successfully")
     add_log_message("OHW application ready. Select a function to begin.")
