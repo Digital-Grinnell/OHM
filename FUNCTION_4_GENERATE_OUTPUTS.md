@@ -11,7 +11,7 @@ Generate final output files (TXT, VTT, CSV, and PDF) from the edited JSON transc
 ## Usage
 
 1. **First, run Function 2** to create the initial JSON transcript
-2. **Edit the JSON file** located in `~/OHM-data/<basename> - dg_<epoch>/dg_<epoch>_transcript.json`:
+2. **Edit the JSON file** located in `~/OHM-data/<sanitized-basename>--dg_<epoch>/dg_<epoch>_transcript.json`:
    - Change speaker labels (e.g., `"speaker": "SPEAKER_00"` → `"speaker": "John Doe"`)
    - Fix transcription errors in the `"text"` fields
    - Correct spelling and punctuation
@@ -31,12 +31,12 @@ Generate final output files (TXT, VTT, CSV, and PDF) from the edited JSON transc
 Files are generated in the same output directory as other processing:
 
 ```
-~/OHM-data/<basename> - dg_<epoch>/
+~/OHM-data/<sanitized-basename>--dg_<epoch>/
 ```
 
 For example:
 ```
-~/OHM-data/interview_john_doe - dg_1712345678/
+~/OHM-data/interview_john_doe--dg_1712345678/
   ├── dg_1712345678.wav                  (from Function 1)
   ├── dg_1712345678.mp3                  (from Function 1)
   ├── dg_1712345678_transcript.json      (from Function 2, YOU EDIT THIS)

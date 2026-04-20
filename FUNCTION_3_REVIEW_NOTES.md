@@ -22,12 +22,12 @@ Create or edit a `review_notes.md` file for the currently selected oral history.
 The file is saved inside the per-file output directory alongside all other deliverables:
 
 ```
-<working_dir>/OHM-data/<basename> - dg_<epoch>/review_notes.md
+<working_dir>/OHM-data/<sanitized-basename>--dg_<epoch>/review_notes.md
 ```
 
 Example:
 ```
-/Volumes/recordings/OHM-data/Darrell Hall - dg_1775499960/review_notes.md
+/Volumes/recordings/OHM-data/Darrell_Hall--dg_1775499960/review_notes.md
 ```
 
 ## Starter Template
