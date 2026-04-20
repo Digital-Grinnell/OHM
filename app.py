@@ -6,6 +6,7 @@ for Digital.Grinnell, including WAV-to-MP3 conversion and future processing step
 
 import flet as ft
 import os
+import getpass
 import logging
 import csv
 import json
@@ -15,8 +16,15 @@ import subprocess
 import shutil
 import warnings
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
+
+# Import sanitize_filename from the common-DG-utilities sibling repository
+_common_dg_path = Path(__file__).resolve().parent.parent / "common-DG-utilities"
+if str(_common_dg_path) not in sys.path:
+    sys.path.insert(0, str(_common_dg_path))
+from common_dg_utilities.dg_utils import sanitize_filename
 
 # DOCX handling imports
 try:
@@ -105,7 +113,6 @@ class PersistentStorage:
                 "window_top": None,
             },
             "function_usage": {},
-            "speaker_names": ["", "", "", "", ""],
         }
 
     def save(self):
@@ -146,15 +153,6 @@ class PersistentStorage:
     def get_all_function_usage(self) -> dict:
         """Get all function usage stats."""
         return self.data["function_usage"]
-
-    def get_speaker_names(self) -> list:
-        """Get the list of speaker names."""
-        return self.data.get("speaker_names", ["", "", "", "", ""])
-
-    def set_speaker_names(self, names: list):
-        """Save the list of speaker names."""
-        self.data["speaker_names"] = names
-        self.save()
 
 
 def check_ffmpeg() -> bool:
@@ -233,7 +231,7 @@ def convert_wav_to_mp3(
 def main(page: ft.Page):
     page.title = "OHM - Oral History Manager"
     page.padding = 20
-    page.window.width = 1400
+    page.window.width = 1050
     page.window.height = 950
     page.scroll = ft.ScrollMode.AUTO
 
@@ -345,6 +343,41 @@ def main(page: ft.Page):
         actions_alignment=ft.MainAxisAlignment.END,
     )
     page.overlay.append(pick_file_dialog)
+
+    # WAV-to-MP3 conversion progress dialog
+    _conv_status_text = ft.Text(
+        "Starting conversion…",
+        size=13,
+        color=ft.Colors.GREY_700,
+    )
+    _conv_progress = ft.ProgressBar(width=420)
+    conversion_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Converting WAV to MP3"),
+        content=ft.Container(
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "⚠️  Conversion is in progress — do not close the app or "
+                        "run other functions until this completes.",
+                        size=13,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
+                    _conv_status_text,
+                    ft.Divider(height=6, color=ft.Colors.TRANSPARENT),
+                    _conv_progress,
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            width=440,
+            padding=ft.padding.only(bottom=8),
+        ),
+        actions=[],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.overlay.append(conversion_dialog)
 
     # Permission PDF selector: read-only TextField + pick button
     pdf_selection_field = ft.TextField(
@@ -555,9 +588,9 @@ def main(page: ft.Page):
             import re
             
             # First check if the file is already in an output directory
-            # Output directories match pattern: * - dg_<epoch>
+            # Output directories match pattern: *--dg_<epoch>
             parent_dir = selected_file.parent
-            if re.search(r' - dg_\d+$', parent_dir.name):
+            if re.search(r'--dg_\d+$', parent_dir.name):
                 # File is already in an output directory - reuse it
                 output_directory = parent_dir
                 match = re.search(r'dg_(\d+)$', parent_dir.name)
@@ -570,14 +603,14 @@ def main(page: ft.Page):
                     return
             
             # File is not in an output directory, search for one based on basename
-            existing_dirs = list(output_base_dir.glob(f"{basename} - dg_*"))
+            existing_dirs = list(output_base_dir.glob(f"{sanitize_filename(basename).rstrip('_')}--dg_*"))
             
             if existing_dirs:
                 # Reuse the first matching directory
                 output_directory = existing_dirs[0]
                 
                 # Extract epoch from directory name using regex
-                # Pattern: <basename> - dg_<epoch>
+                # Pattern: <basename>--dg_<epoch>
                 match = re.search(r'dg_(\d+)$', output_directory.name)
                 if match:
                     current_epoch = int(match.group(1))
@@ -590,7 +623,7 @@ def main(page: ft.Page):
                     add_log_message("Warning: Could not extract epoch from existing directory")
                     epoch = int(time.time())
                     current_epoch = epoch
-                    dirname = f"{basename} - dg_{epoch}"
+                    dirname = f"{sanitize_filename(basename).rstrip('_')}--dg_{epoch}"
                     output_directory = output_base_dir / dirname
                     try:
                         output_directory.mkdir(parents=True, exist_ok=True)
@@ -609,9 +642,9 @@ def main(page: ft.Page):
                 # No existing directory found, create a new one
                 epoch = int(time.time())
                 current_epoch = epoch
-                dirname = f"{basename} - dg_{epoch}"
+                dirname = f"{sanitize_filename(basename).rstrip('_')}--dg_{epoch}"
                 output_directory = output_base_dir / dirname
-                
+
                 try:
                     output_directory.mkdir(parents=True, exist_ok=True)
                     add_log_message(f"File selected: {selected_file.name}")
@@ -779,7 +812,7 @@ def main(page: ft.Page):
             if not common:
                 common = "merged"
             ext = selected_ordered[0].suffix.lower()
-            return f"{common} (merged){ext}"
+            return sanitize_filename(f"{common}_MERGED{ext}")
 
         def refresh_dialog():
             available_column.controls.clear()
@@ -845,7 +878,7 @@ def main(page: ft.Page):
             # Auto-update output filename when it still looks auto-generated
             auto = compute_output_name()
             current_val = output_name_field.value or ""
-            if not current_val or current_val.endswith("(merged).wav") or current_val.endswith("(merged).mp3"):
+            if not current_val or current_val.endswith("_MERGED.wav") or current_val.endswith("_MERGED.mp3"):
                 output_name_field.value = auto
             page.update()
 
@@ -881,7 +914,8 @@ def main(page: ft.Page):
                 page.update()
                 return
 
-            output_filename = (output_name_field.value or "").strip()
+            output_filename = sanitize_filename((output_name_field.value or "").strip())
+            output_name_field.value = output_filename
             if not output_filename:
                 merge_status_text.value = "⚠️  Output filename cannot be empty."
                 merge_status_text.color = ft.Colors.RED_600
@@ -1133,8 +1167,9 @@ def main(page: ft.Page):
 
     def on_function_1_wav_to_mp3(e):
         """Execute Function 1: WAV to MP3 Conversion"""
+        import threading
         nonlocal selected_file, output_directory, current_epoch
-        
+
         if not check_ffmpeg():
             update_status(
                 "⚠️  ffmpeg not found — install it before converting WAV files.",
@@ -1174,31 +1209,12 @@ def main(page: ft.Page):
             return
 
         # Define standardized filenames using epoch
-        wav_filename = f"dg_{current_epoch}.wav"
-        mp3_filename = f"dg_{current_epoch}.mp3"
+        wav_filename = sanitize_filename(f"dg_{current_epoch}.wav")
+        mp3_filename = sanitize_filename(f"dg_{current_epoch}.mp3")
         wav_copy_path = output_directory / wav_filename
         mp3_path = output_directory / mp3_filename
 
-        # Step 1: Copy WAV file to output directory if it doesn't already exist
-        if wav_copy_path.exists():
-            add_log_message(f"WAV file already exists in output directory: {wav_filename}")
-        else:
-            try:
-                add_log_message(f"Copying WAV file to output directory: {wav_filename}")
-                update_status(f"Copying {selected_file.name} to output directory...")
-                page.update()
-                
-                shutil.copy2(selected_file, wav_copy_path)
-                
-                wav_size_mb = wav_copy_path.stat().st_size / (1024 * 1024)
-                add_log_message(f"✅ WAV file copied: {wav_filename} ({wav_size_mb:.1f} MB)")
-            except Exception as ex:
-                update_status(f"Error copying WAV file: {str(ex)}", is_error=True)
-                add_log_message(f"❌ Failed to copy WAV file: {str(ex)}")
-                logger.error(f"WAV copy failed: {str(ex)}")
-                return
-
-        # Step 2: Check if MP3 already exists
+        # Quick pre-checks that don't require I/O can stay here
         if mp3_path.exists():
             update_status(
                 f"⚠️  MP3 already exists: {mp3_filename} — skipping conversion.",
@@ -1207,22 +1223,58 @@ def main(page: ft.Page):
             add_log_message(f"Skipped: {mp3_filename} already exists in {output_directory.name}")
             return
 
-        # Step 3: Convert the copied WAV file to MP3
+        # Open the progress dialog NOW — before any file I/O — so it renders
+        # immediately while the event handler returns and the thread does the work.
         storage.record_function_usage("function_1_wav_to_mp3")
-        update_status(f"Converting {wav_filename} to MP3 …")
-        add_log_message(f"Starting conversion: {wav_filename} → {mp3_filename}")
+        src_mb = selected_file.stat().st_size / (1024 * 1024)
+        _conv_status_text.value = (
+            f"Step 1 of 2: Copying {selected_file.name} ({src_mb:.1f} MB)…\n"
+            f"Large files may take several minutes. Do not close the app."
+        )
+        conversion_dialog.open = True
         page.update()
 
-        success, message = convert_wav_to_mp3(wav_copy_path, mp3_path)
+        def _run_copy_and_convert():
+            # --- Phase 1: copy WAV ---
+            if wav_copy_path.exists():
+                add_log_message(f"WAV file already exists in output directory: {wav_filename}")
+            else:
+                try:
+                    add_log_message(f"Copying WAV file to output directory: {wav_filename}")
+                    shutil.copy2(selected_file, wav_copy_path)
+                    wav_size_mb = wav_copy_path.stat().st_size / (1024 * 1024)
+                    add_log_message(f"✅ WAV file copied: {wav_filename} ({wav_size_mb:.1f} MB)")
+                except Exception as ex:
+                    conversion_dialog.open = False
+                    update_status(f"Error copying WAV file: {str(ex)}", is_error=True)
+                    add_log_message(f"❌ Failed to copy WAV file: {str(ex)}")
+                    logger.error(f"WAV copy failed: {str(ex)}")
+                    page.update()
+                    return
 
-        if success:
-            add_log_message(f"✅ Conversion complete: {mp3_filename}")
-            add_log_message(f"✅ Output location: {output_directory}")
-        else:
-            add_log_message(f"❌ Conversion failed: {message}")
+            # --- Phase 2: convert to MP3 ---
+            wav_mb = wav_copy_path.stat().st_size / (1024 * 1024)
+            _conv_status_text.value = (
+                f"Step 2 of 2: Converting {wav_filename} ({wav_mb:.1f} MB) → {mp3_filename}…\n"
+                f"Large files may take several minutes. Do not close the app."
+            )
+            add_log_message(f"Starting conversion: {wav_filename} → {mp3_filename}")
+            update_status(f"Converting {wav_filename} to MP3 — please wait…")
+            page.update()
 
-        update_status(message.splitlines()[0], is_error=not success)
-        page.update()
+            success, message = convert_wav_to_mp3(wav_copy_path, mp3_path)
+            conversion_dialog.open = False
+            if success:
+                _conv_status_text.value = "Done"
+                add_log_message(f"✅ Conversion complete: {mp3_filename}")
+                add_log_message(f"✅ Output location: {output_directory}")
+            else:
+                add_log_message(f"❌ Conversion failed: {message}")
+            update_status(message.splitlines()[0], is_error=not success)
+            page.update()
+
+        threading.Thread(target=_run_copy_and_convert, daemon=True).start()
+
 
     def on_function_2a_transcribe_whisper(e):
         """Execute Function 2a: Transcribe MP3 using OpenAI Whisper"""
@@ -1259,7 +1311,7 @@ def main(page: ft.Page):
             return
 
         # Resolve the MP3 to transcribe
-        mp3_filename = f"dg_{current_epoch}.mp3"
+        mp3_filename = sanitize_filename(f"dg_{current_epoch}.mp3")
         mp3_path = output_directory / mp3_filename
 
         if selected_file.suffix.lower() == ".wav":
@@ -1298,7 +1350,7 @@ def main(page: ft.Page):
 
         # Define output filenames
         base_name = f"dg_{current_epoch}"
-        json_path = output_directory / f"{base_name}_transcript.json"
+        json_path = output_directory / sanitize_filename(f"{base_name}_transcript.json")
         
         # Check if transcription already exists
         if json_path.exists():
@@ -1409,7 +1461,6 @@ def main(page: ft.Page):
                     "detected_language": detected_language,
                     "device": device,
                     "segment_count": len(final_segments),
-                    "speaker_mapping": build_speaker_mapping(get_speaker_names(), get_reviewed_by()),
                     "source_audio": collect_audio_file_info(audio_to_transcribe, selected_file, output_directory),
                     **(
                         {"permission_form": {
@@ -1489,13 +1540,9 @@ def main(page: ft.Page):
         storage.record_function_usage("function_2_ms_word_online")
         
         # Create instructions dialog
-        expected_docx_name = f"{audio_to_transcribe.stem}.docx"
-        expected_json_name = f"dg_{current_epoch}_transcript.json" if current_epoch else f"{audio_to_transcribe.stem}_transcript.json"
+        expected_docx_name = sanitize_filename(f"{audio_to_transcribe.stem}.docx")
+        expected_json_name = sanitize_filename(f"dg_{current_epoch}_transcript.json") if current_epoch else sanitize_filename(f"{audio_to_transcribe.stem}_transcript.json")
         output_path = str(output_directory if output_directory else audio_to_transcribe.parent)
-        
-        # Get speaker names from UI
-        speaker_names = get_speaker_names()
-        active_speakers = [name for name in speaker_names if name.strip()]
         
         # Helper function to create copyable text field
         def copyable_field(label, value):
@@ -1533,8 +1580,7 @@ def main(page: ft.Page):
             add_log_message(f"📝 Converting {docx_path.name} to JSON...")
             
             success, message = convert_docx_to_json(
-                docx_path, json_path, speaker_names,
-                reviewed_by_name=get_reviewed_by(),
+                docx_path, json_path,
                 source_audio=audio_to_transcribe,
                 selected_source=selected_file,
                 out_dir=output_directory,
@@ -1615,18 +1661,6 @@ def main(page: ft.Page):
                                     ft.Text("Selected Audio File", size=16, weight=ft.FontWeight.BOLD),
                         copyable_field("Audio Filename:", audio_to_transcribe.name),
                         copyable_field("Audio Location:", str(audio_to_transcribe.parent)),
-                        
-                        ft.Divider(height=20),
-                        
-                        ft.Text("Individuals (from UI)", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Text("Copy these names when editing transcription in Word:", size=12, italic=True),
-                        ft.Column([
-                            copyable_field(f"Speaker {i+1}:", name) 
-                            for i, name in enumerate(speaker_names) 
-                            if name.strip()
-                        ] if active_speakers else [
-                            ft.Text("No speaker names entered in UI", size=12, italic=True, color=ft.Colors.GREY_600)
-                        ], spacing=3),
                         
                         ft.Divider(height=20),
                         
@@ -1800,15 +1834,12 @@ def main(page: ft.Page):
         add_log_message(f"📝 Displayed MS Word Online instructions for: {audio_to_transcribe.name}")
         update_status(f"Follow the instructions to transcribe with MS Word Online")
 
-    def convert_docx_to_json(docx_path, output_json_path, ui_speaker_names=None,
-                              reviewed_by_name="", source_audio=None, selected_source=None, out_dir=None):
+    def convert_docx_to_json(docx_path, output_json_path, source_audio=None, selected_source=None, out_dir=None):
         """Convert MS Word transcription DOCX to JSON format.
         
         Args:
             docx_path: Path to DOCX file
             output_json_path: Path for output JSON file
-            ui_speaker_names: List of speaker names from UI (optional)
-            reviewed_by_name: Name of the person who reviewed/edited the transcript
             source_audio: Path of the audio file actually used for transcription
             selected_source: Path of the file the user originally selected
             out_dir: Output directory (for WAV detection)
@@ -1817,12 +1848,17 @@ def main(page: ft.Page):
             if not DOCX_AVAILABLE:
                 raise ImportError("python-docx library is required. Install it with: pip install python-docx")
             
-            # Clean up UI speaker names
-            ui_speakers = [name.strip() for name in (ui_speaker_names or []) if name and name.strip()]
-            
             # Parse DOCX file
             doc = Document(docx_path)
-            
+
+            # Extract author metadata written by Word Online
+            word_user = ""
+            try:
+                props = doc.core_properties
+                word_user = (props.last_modified_by or props.author or "").strip()
+            except Exception:
+                pass
+
             # DEBUG: Log all paragraph content to understand the format
             add_log_message("📋 DEBUG: Parsing DOCX paragraphs...")
             paragraph_count = 0
@@ -1840,10 +1876,6 @@ def main(page: ft.Page):
             current_speaker = "SPEAKER_00"
             current_timestamp = None
             current_text = []
-            
-            # Track unique speakers in order they appear to map to UI names
-            docx_speakers_seen = []
-            speaker_mapping = {}  # Map DOCX speaker to UI speaker
             
             # Regex pattern for Word's timestamp format: HH:MM:SS Speaker
             timestamp_speaker_pattern = re.compile(r'^(\d{1,2}):(\d{2}):(\d{2})\s+(.+)$')
@@ -1871,22 +1903,9 @@ def main(page: ft.Page):
                     hours, minutes, seconds, docx_speaker = match.groups()
                     current_timestamp = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
                     
-                    # Map DOCX speaker to UI speaker name
+                    # Use DOCX speaker name as-is
                     docx_speaker = docx_speaker.strip()
-                    if docx_speaker not in speaker_mapping:
-                        # First time seeing this speaker - map to next UI name
-                        if docx_speaker not in docx_speakers_seen:
-                            docx_speakers_seen.append(docx_speaker)
-                        
-                        speaker_index = docx_speakers_seen.index(docx_speaker)
-                        if ui_speakers and speaker_index < len(ui_speakers):
-                            # Use UI speaker name as-is (preserve case and spaces)
-                            speaker_mapping[docx_speaker] = ui_speakers[speaker_index]
-                        else:
-                            # No UI name available, keep DOCX name as-is
-                            speaker_mapping[docx_speaker] = docx_speaker
-                    
-                    current_speaker = speaker_mapping[docx_speaker]
+                    current_speaker = docx_speaker
                     current_text = []
                 else:
                     # This is text content, add to current segment
@@ -1912,7 +1931,7 @@ def main(page: ft.Page):
                 extra={
                     "ms_word_url": "https://www.office.com/launch/word",
                     "docx_source": str(docx_path),
-                    "speaker_mapping": build_speaker_mapping(ui_speakers, reviewed_by_name),
+                    **(  {"word_online_user": word_user}  if word_user else {}),
                     "segment_count": len(segments),
                     "source_audio": (
                         collect_audio_file_info(source_audio, selected_source, out_dir)
@@ -2114,11 +2133,11 @@ def main(page: ft.Page):
 
         # Define file paths
         base_name = f"dg_{current_epoch}"
-        json_path = output_directory / f"{base_name}_transcript.json"
-        txt_path = output_directory / f"{base_name}.txt"
-        vtt_path = output_directory / f"{base_name}.vtt"
-        csv_path = output_directory / f"{base_name}.csv"
-        pdf_path = output_directory / f"{base_name}.pdf"
+        json_path = output_directory / sanitize_filename(f"{base_name}_transcript.json")
+        txt_path = output_directory / sanitize_filename(f"{base_name}.txt")
+        vtt_path = output_directory / sanitize_filename(f"{base_name}.vtt")
+        csv_path = output_directory / sanitize_filename(f"{base_name}.csv")
+        pdf_path = output_directory / sanitize_filename(f"{base_name}.pdf")
         
         # Check if JSON exists
         if not json_path.exists():
@@ -2272,9 +2291,9 @@ def main(page: ft.Page):
             processed_files = {}
             if output_base_dir.exists():
                 for dir_path in output_base_dir.iterdir():
-                    if dir_path.is_dir() and ' - dg_' in dir_path.name:
+                    if dir_path.is_dir() and '--dg_' in dir_path.name:
                         # Extract basename and epoch from directory name
-                        parts = dir_path.name.split(' - dg_')
+                        parts = dir_path.name.split('--dg_')
                         if len(parts) == 2:
                             original_basename = parts[0]  # e.g., "Darrell Hall"
                             epoch = parts[1]
@@ -2310,7 +2329,11 @@ def main(page: ft.Page):
             csv_count = sum(1 for f in processed_files.values() if f['csv'])
             pdf_count = sum(1 for f in processed_files.values() if f['pdf'])
             notes_count = sum(1 for f in processed_files.values() if f['notes'])
-            
+
+            # Compute unmatched input files using sanitized stems (dirs use sanitize_filename)
+            unprocessed = [name for name in sorted(input_files.keys())
+                           if sanitize_filename(name).rstrip('_') not in processed_files]
+
             # Generate report content
             timestamp = datetime.now()
             report_content = f"""# OHM Workflow Progress Report
@@ -2347,7 +2370,7 @@ This report tracks the processing status of audio files from the input directory
 | Processed Directories | {total_processed} |
 | ✅ Complete (All stages) | {complete_count} |
 | 🟡 In Progress (Some stages) | {in_progress_count} |
-| ⏳ Not Started | {total_input - total_processed} |
+| ⏳ Not Started | {len(unprocessed)} |
 
 ### Processing Stages Completed
 
@@ -2402,9 +2425,7 @@ This report tracks the processing status of audio files from the input directory
                     report_content += f"- Review Notes: {notes_indicator}\n"
                     report_content += f"- Location: `{info['directory'].name}`\n\n"
             
-            # Add unprocessed files
-            unprocessed = [name for name in sorted(input_files.keys())
-                         if not any(name in processed for processed in processed_files.keys())]
+            # Add unprocessed files (already computed above with sanitized matching)
             
             if unprocessed:
                 report_content += f"### ⏳ Not Started ({len(unprocessed)} files)\n\n"
@@ -2431,7 +2452,7 @@ For each audio file:
 """
             
             # Save report with timestamp
-            report_filename = f"workflow_progress_{timestamp.strftime('%Y%m%d_%H%M%S')}.md"
+            report_filename = sanitize_filename(f"workflow_progress_{timestamp.strftime('%Y%m%d_%H%M%S')}.md")
             report_path = output_base_dir / report_filename
             
             with open(report_path, 'w', encoding='utf-8') as f:
@@ -2759,19 +2780,6 @@ For each audio file:
             add_log_message(f"Error reading help file: {str(e)}")
             update_status(f"Error reading help file: {str(e)}", True)
 
-    def build_speaker_mapping(ui_speaker_names: list[str], reviewed_by_name: str = "") -> dict:
-        """Build a normalised speaker mapping with 'Interviewer', 'Speaker N' keys plus 'Reviewed By'."""
-        mapping: dict = {}
-        keys = ["Interviewer"] + [f"Speaker {i}" for i in range(1, len(ui_speaker_names))]
-        for key, name in zip(keys, ui_speaker_names):
-            if key == "Interviewer":
-                # Default to the literal word "Interviewer" when the field is left blank
-                mapping[key] = name.strip() if name and name.strip() else "Interviewer"
-            else:
-                mapping[key] = name.strip() if name and name.strip() else ""
-        mapping["Reviewed By"] = reviewed_by_name.strip() if reviewed_by_name and reviewed_by_name.strip() else ""
-        return mapping
-
     def build_provenance_notes(method: str, extra: dict | None = None) -> dict:
         """Build a provenance/notes dict capturing how and when a transcript was created."""
         import sys
@@ -2938,6 +2946,16 @@ For each audio file:
                 parts = [p for p in (machine_display, os_display) if p]
                 narrative += f" Processing was performed on a {', '.join(parts)} system."
 
+            # OS user who ran the app
+            os_user = sys_info.get("os_user", "")
+            if os_user:
+                narrative += f" The app was run by OS user \u201c{os_user}\u201d."
+
+            # MS Word Online reviewer (from DOCX core properties, if captured)
+            word_user = notes.get("word_online_user", "")
+            if word_user:
+                narrative += f" The Word Online document was last modified by \u201c{word_user}\u201d."
+
             # Permission / consent form
             perm_form = notes.get("permission_form")
             if perm_form:
@@ -3043,33 +3061,6 @@ For each audio file:
                 break
 
         return info
-
-    def save_speaker_names():
-        """Save the current speaker names and reviewer to persistent storage."""
-        names = [
-            speaker_name_1.value or "",
-            speaker_name_2.value or "",
-            speaker_name_3.value or "",
-            speaker_name_4.value or "",
-            speaker_name_5.value or "",
-            reviewed_by.value or "",
-        ]
-        storage.set_speaker_names(names)
-        logger.debug(f"Saved individuals: {names}")
-
-    def get_speaker_names():
-        """Get the current speaker names (indices 0-4) from the UI fields."""
-        return [
-            speaker_name_1.value or "",
-            speaker_name_2.value or "",
-            speaker_name_3.value or "",
-            speaker_name_4.value or "",
-            speaker_name_5.value or "",
-        ]
-
-    def get_reviewed_by():
-        """Get the Reviewed By name from the UI field."""
-        return reviewed_by.value or ""
 
     def execute_selected_function(function_key):
         """Execute the selected function from dropdown or show help if help mode is enabled"""
@@ -3304,7 +3295,7 @@ For each audio file:
                                                 italic=True,
                                                 color=ft.Colors.GREY_700,
                                             ),
-                                            ft.Container(height=5),  # Match Speaker Names spacing
+                                            ft.Container(height=5),
                                             active_function_dropdown := ft.Dropdown(
                                                 label="Select Function to Execute",
                                                 hint_text="Functions ordered by most recently used",
@@ -3319,86 +3310,6 @@ For each audio file:
                                                 label="Help Mode",
                                                 ref=help_mode_enabled,
                                                 tooltip="Enable to view help documentation for functions instead of executing them",
-                                            ),
-                                        ],
-                                        spacing=5,
-                                    ),
-                                    ft.Container(width=20),  # Spacer
-                                    ft.Column(
-                                        [
-                                            ft.Text(
-                                                "Individuals",
-                                                size=18,
-                                                weight=ft.FontWeight.BOLD,
-                                            ),
-                                            ft.Text(
-                                                "Enter speaker names and reviewer for transcription (optional, copy/paste enabled)",
-                                                size=12,
-                                                italic=True,
-                                                color=ft.Colors.GREY_700,
-                                            ),
-                                            ft.Container(height=5),  # Extra space after description
-                                            ft.Row(
-                                                [
-                                                    ft.Column(
-                                                        [
-                                                            speaker_name_1 := ft.TextField(
-                                                                label="Interviewer",
-                                                                hint_text="e.g., John Doe",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                            ft.Container(height=8),  # Vertical spacing
-                                                            speaker_name_2 := ft.TextField(
-                                                                label="Speaker 1",
-                                                                hint_text="e.g., Jane Smith",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                            ft.Container(height=8),  # Vertical spacing
-                                                            speaker_name_3 := ft.TextField(
-                                                                label="Speaker 2",
-                                                                hint_text="Optional",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                        ],
-                                                        spacing=0,
-                                                    ),
-                                                    ft.Container(width=15),  # Horizontal spacing between columns
-                                                    ft.Column(
-                                                        [
-                                                            speaker_name_4 := ft.TextField(
-                                                                label="Speaker 3",
-                                                                hint_text="Optional",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                            ft.Container(height=8),  # Vertical spacing
-                                                            speaker_name_5 := ft.TextField(
-                                                                label="Speaker 4",
-                                                                hint_text="Optional",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                            ft.Container(height=8),  # Vertical spacing
-                                                            reviewed_by := ft.TextField(
-                                                                label="Reviewed By",
-                                                                hint_text="Reviewer / editor name",
-                                                                width=200,
-                                                                text_size=13,
-                                                                on_change=lambda e: save_speaker_names(),
-                                                            ),
-                                                        ],
-                                                        spacing=0,
-                                                    ),
-                                                ],
-                                                spacing=0,
                                             ),
                                         ],
                                         spacing=5,
@@ -3479,16 +3390,6 @@ For each audio file:
 
     # Populate function dropdowns with sorted options
     active_function_dropdown.options = get_sorted_function_options(active_functions)
-    
-    # Load saved speaker names
-    saved_names = storage.get_speaker_names()
-    speaker_name_1.value = saved_names[0] if len(saved_names) > 0 else ""
-    speaker_name_2.value = saved_names[1] if len(saved_names) > 1 else ""
-    speaker_name_3.value = saved_names[2] if len(saved_names) > 2 else ""
-    speaker_name_4.value = saved_names[3] if len(saved_names) > 3 else ""
-    speaker_name_5.value = saved_names[4] if len(saved_names) > 4 else ""
-    reviewed_by.value = saved_names[5] if len(saved_names) > 5 else ""
-    
     page.update()
 
     # Auto-scan on startup if a directory was restored from persistence

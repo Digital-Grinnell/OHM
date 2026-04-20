@@ -75,7 +75,7 @@ The function displays instructions for this multi-step workflow:
 Save the DOCX directly to your output directory — no moving needed.
 
 Before you begin the download, copy these two values from the instructions dialog:
-- **Save To (Output Directory):** shown as a copyable field in the dialog — the full path to `~/OHM-data/<basename> - dg_<epoch>/`
+- **Save To (Output Directory):** shown as a copyable field in the dialog — the full path to `~/OHM-data/<sanitized-basename>--dg_<epoch>/`
 - **Save As (Filename):** shown as a copyable field in the dialog — e.g. `dg_<epoch>.docx`
 
 Then:
@@ -112,7 +112,7 @@ Then:
 
 The instructions remind you to save files in:
 ```
-~/OHM-data/<basename> - dg_<epoch>/
+~/OHM-data/<sanitized-basename>--dg_<epoch>/
 ```
 
 This is the same directory used by all other functions for consistency.
@@ -141,7 +141,7 @@ The Function 2 dialog includes a built-in **Review Notes** tab so you can record
 - Changes saved here are immediately visible if you later open Function 3, and vice versa
 - The file is stored alongside all other per-file outputs:
   ```
-  ~/OHM-data/<basename> - dg_<epoch>/review_notes.md
+  ~/OHM-data/<sanitized-basename>--dg_<epoch>/review_notes.md
   ```
 
 ## Important Notes

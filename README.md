@@ -35,7 +35,7 @@ Choose between two transcription methods:
 - Seeds new files with a template (title, filename, date, blank Notes section)
 - **Save** writes the file and closes the dialog; write errors are shown inline
 - **Cancel** closes without saving any changes
-- File lives alongside all other per-file outputs in `<basename> - dg_<epoch>/`
+- File lives alongside all other per-file outputs in `<sanitized-basename>--dg_<epoch>/`
 - Also accessible as the **📋 Review Notes** tab inside the Function 2 dialog — edits made there are shared with this function
 
 ### Function 4: Generate TXT, VTT, CSV & PDF from JSON
@@ -64,14 +64,6 @@ Choose between two transcription methods:
 - Helps track project progress over time
 
 ## Additional Features
-
-### Individuals Management
-- **6 persistent name fields** in the UI: Interviewer, Speaker 1–4, and Reviewed By
-- Interviewer defaults to the label "Interviewer" when left blank
-- Names are saved automatically and persist across sessions
-- Used in MS Word Online instructions and DOCX-to-JSON conversion
-- Speaker mapping stored in the JSON `notes` block with normalised keys
-- Maintains exact formatting (no uppercase conversion or underscores)
 
 ### Transcription Mode Selection
 - **Radio button interface** to select transcription method
@@ -167,31 +159,25 @@ All dependencies are installed automatically by `run.sh`:
    - **Whisper**: Automatic processing, creates JSON directly
    - **MS Word Online**: Follow instructions, download DOCX, click "Convert to JSON"
 
-5. **Edit Individuals** (Optional but recommended)
-   - Enter names in the **Individuals** panel: Interviewer, Speaker 1–4, Reviewed By
-   - Interviewer defaults to "Interviewer" when left blank
-   - Names are used in MS Word instructions and DOCX conversion
-   - Names persist across sessions
-
-6. **Edit Transcript JSON**
+5. **Edit Transcript JSON**
    - Open the generated `dg_<epoch>_transcript.json` file
    - Fix speaker labels (e.g., change "SPEAKER_00" to actual names)
    - Correct transcription errors
    - Adjust timing if necessary
    - Save the edited JSON
 
-7. **Generate Final Outputs**
+6. **Generate Final Outputs**
    - Run **Function 4** to create deliverables
    - Generates: TXT, VTT, CSV, and PDF files
    - All formats include timestamps and speaker labels
    - PDF opens with a descriptive title and provenance section
 
-8. **Add Review Notes** (Optional)
+7. **Add Review Notes** (Optional)
    - Run **Function 3** to open the Markdown review notes editor
    - Records observations, corrections, or follow-up items for the oral history
    - Saved as `review_notes.md` in the file's output directory
 
-9. **Track Progress** (Optional)
+8. **Track Progress** (Optional)
    - Run **Function 5** to generate progress report
    - Review what's complete and what needs work
    - Reports saved with timestamps in the working/output directory
@@ -202,7 +188,7 @@ All processed files are organized inside an `OHM-data` subfolder within the **Wo
 
 ```
 <working_dir>/OHM-data/
-├── <basename> - dg_<epoch>/
+├── <sanitized-basename>--dg_<epoch>/
 │   ├── dg_<epoch>.wav          # Original or converted audio
 │   ├── dg_<epoch>.mp3          # Compressed audio
 │   ├── dg_<epoch>_transcript.json  # Editable transcript
@@ -214,7 +200,33 @@ All processed files are organized inside an `OHM-data` subfolder within the **Wo
 └── workflow_progress_YYYYMMDD_HHMMSS.md  # Progress reports
 ```
 
+> **Naming convention:** The basename part is sanitised (spaces → `_`, special characters stripped). For merged audio files the suffix `_MERGED` is appended before the `--dg_` separator, e.g. `Kerry_Bart_MERGED--dg_1775659390/`.
+
 > **Note:** Application logs and the persistent settings file remain in `~/OHM-data/` regardless of the Working/Output Directory selection.
+
+### Migrating existing OHM-data directories
+
+If you have OHM-data directories created by an older version of OHM (which used a ` - dg_` separator or lowercase `_merged`), run the included migration script to bring them up to date:
+
+```bash
+# Preview changes (no files are renamed):
+python3 migrate_ohm_names.py /path/to/OHM-data
+
+# Apply all renames:
+python3 migrate_ohm_names.py --apply /path/to/OHM-data
+```
+
+### Migrating existing OHM-data directories
+
+If you have OHM-data directories created by an older version of OHM (which used a ` - dg_` separator or lowercase `_merged`), run the included migration script to bring them up to date:
+
+```bash
+# Preview changes (no files are renamed):
+python3 migrate_ohm_names.py /path/to/OHM-data
+
+# Apply all renames:
+python3 migrate_ohm_names.py --apply /path/to/OHM-data
+```
 
 ### File Formats
 

@@ -17,32 +17,36 @@ Convert uncompressed WAV audio files to compressed MP3 format for oral history r
    - Files are displayed with relative paths (e.g., `subdir/file.wav`)
    - The app searches `~/OHM-data/` for an existing directory matching the file's basename
    - If found, it reuses that directory and epoch timestamp
-   - If not found, it creates a new directory named `<basename> - dg_<epoch>`
+   - If not found, it creates a new directory named `<sanitized-basename>--dg_<epoch>`
 4. In the **Active Functions** dropdown, select **"🎵 1: Convert WAV to MP3"**
 5. The function will:
-   - Copy the source WAV to the output directory as `dg_<epoch>.wav` (if not already copied)
-   - Convert the copied WAV to `dg_<epoch>.mp3` (if MP3 doesn't already exist)
-6. Monitor the status and log output for progress
+   - Open a **"Converting WAV to MP3"** progress dialog immediately — do not close the app or start other functions until it dismisses itself
+   - **Step 1:** Copy the source WAV to the output directory as `dg_<epoch>.wav` (if not already copied)
+   - **Step 2:** Convert the copied WAV to `dg_<epoch>.mp3`
+   - The dialog updates as each step completes, then closes automatically when done
+6. Check the status bar and log output for the final result
+
+> ⚠️ **Large files (1 GB+) can take several minutes to copy and convert.** The progress dialog will remain open throughout. Do not close the application until it dismisses.
 
 ## Output Directory
 
 When you select a file for processing, OHM searches for an existing output directory in `~/OHM-data/` that matches the file's basename. If found, it reuses that directory and its epoch timestamp. If not found, it creates a new unique subdirectory with the naming pattern:
 
 ```
-<filename-without-extension> - dg_<unix-timestamp>
+<sanitized-filename-without-extension>--dg_<unix-timestamp>
 ```
 
 For example, selecting `interview_john_doe.wav` for the first time might create:
 ```
-~/OHM-data/interview_john_doe - dg_1712345678/
+~/OHM-data/interview_john_doe--dg_1712345678/
 ```
 
-If you select `interview_john_doe.wav` or `interview_john_doe.mp3` again later, the app will find and reuse the existing `interview_john_doe - dg_1712345678/` directory instead of creating a new one.
+If you select `interview_john_doe.wav` or `interview_john_doe.mp3` again later, the app will find and reuse the existing `interview_john_doe--dg_1712345678/` directory instead of creating a new one.
 
 The converted files will use the directory's epoch timestamp:
 ```
-~/OHM-data/interview_john_doe - dg_1712345678/dg_1712345678.wav (copied from source)
-~/OHM-data/interview_john_doe - dg_1712345678/dg_1712345678.mp3 (converted)
+~/OHM-data/interview_john_doe--dg_1712345678/dg_1712345678.wav (copied from source)
+~/OHM-data/interview_john_doe--dg_1712345678/dg_1712345678.mp3 (converted)
 ```
 
 All output files for this audio file will be stored in this directory. The source WAV file is copied to the output directory with standardized naming before conversion. This keeps each oral history recording's outputs organized and allows you to work with the same file multiple times without creating duplicate directories.
