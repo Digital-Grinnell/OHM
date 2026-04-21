@@ -229,7 +229,7 @@ def convert_wav_to_mp3(
 
 
 def main(page: ft.Page):
-    page.title = "OHM v1.2 - Oral History Manager"
+    page.title = "OHM v1.2.1 - Oral History Manager"
     page.padding = 20
     page.window.width = 1050
     page.window.height = 950
