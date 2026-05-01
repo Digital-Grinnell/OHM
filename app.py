@@ -247,19 +247,71 @@ def main(page: ft.Page):
         log_output.value = f"[{timestamp}] {text}\n{existing}"
         page.update()
 
-    def update_status(message: str, is_error: bool = False):
-        """Update the status text widget."""
-        status_text.value = message
-        status_text.color = ft.Colors.RED_600 if is_error else ft.Colors.GREEN_700
+    def open_file_with_default_app(file_path: Path):
+        """Open a file using the system's default application."""
+        try:
+            if platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", str(file_path)], check=True)
+            elif platform.system() == "Windows":
+                os.startfile(str(file_path))
+            else:  # Linux and others
+                subprocess.run(["xdg-open", str(file_path)], check=True)
+            return True
+        except Exception as ex:
+            logger.error(f"Failed to open file {file_path}: {ex}")
+            return False
+
+    def update_status(message: str, is_error: bool = False, file_path: Path | None = None):
+        """Update the status text widget, optionally with a clickable file link."""
+        color = ft.Colors.RED_600 if is_error else ft.Colors.GREEN_700
+        
+        if file_path and file_path.exists():
+            # Create a row with message and clickable button to open the file
+            def on_open_file(e):
+                if open_file_with_default_app(file_path):
+                    add_log_message(f"📂 Opened file: {file_path.name}")
+                else:
+                    add_log_message(f"❌ Failed to open: {file_path.name}")
+            
+            status_container.content = ft.Row(
+                controls=[
+                    ft.Text(
+                        message,
+                        size=14,
+                        color=color,
+                        italic=True,
+                    ),
+                    ft.TextButton(
+                        "Open File",
+                        icon=ft.Icons.OPEN_IN_NEW,
+                        on_click=on_open_file,
+                        tooltip=f"Open {file_path.name}",
+                    ),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        else:
+            # Simple text status
+            status_container.content = ft.Text(
+                message,
+                size=14,
+                color=color,
+                italic=True,
+            )
+        
         page.update()
 
     # ------------------------------------------------------------------ widgets
 
-    status_text = ft.Text(
-        "Ready",
-        size=14,
-        color=ft.Colors.GREEN_700,
-        italic=True,
+    # Container for status - can hold either simple text or row with button
+    status_container = ft.Container(
+        content=ft.Text(
+            "Ready",
+            size=14,
+            color=ft.Colors.GREEN_700,
+            italic=True,
+        )
     )
 
     log_output = ft.TextField(
@@ -2462,7 +2514,7 @@ For each audio file:
             add_log_message(success_msg)
             add_log_message(f"  Saved to: {output_base_dir}")
             add_log_message(f"  Found {total_input} input files, {total_processed} processed")
-            update_status(success_msg)
+            update_status(success_msg, file_path=report_path)
             
         except Exception as ex:
             error_msg = f"❌ Report generation failed: {str(ex)}"
@@ -2595,7 +2647,18 @@ For each audio file:
 
     def on_copy_status_click(e):
         """Copy current status text to clipboard."""
-        page.set_clipboard(status_text.value or "")
+        # Extract text from status_container content
+        status_text_value = ""
+        if isinstance(status_container.content, ft.Text):
+            status_text_value = status_container.content.value or ""
+        elif isinstance(status_container.content, ft.Row):
+            # Get text from first control (Text widget)
+            if status_container.content.controls:
+                first_control = status_container.content.controls[0]
+                if isinstance(first_control, ft.Text):
+                    status_text_value = first_control.value or ""
+        
+        page.set_clipboard(status_text_value)
         add_log_message("Status copied to clipboard.")
 
     def on_clear_log_click(e):
@@ -3344,7 +3407,7 @@ For each audio file:
                                     ),
                                 ],
                             ),
-                            status_text,
+                            status_container,
                         ],
                         spacing=5,
                     ),
