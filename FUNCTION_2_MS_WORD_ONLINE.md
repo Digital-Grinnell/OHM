@@ -3,10 +3,7 @@
 ## Purpose
 Provide step-by-step instructions for manual transcription using Microsoft Word Online's built-in Transcribe feature, using Microsoft's cloud-based transcription service.
 
-> **Note:** MS Word Online is the sole active transcription method in OHM. OpenAI Whisper
-> (local, CPU-based) was evaluated as an alternative but was removed from the UI due to
-> slow performance on non-GPU hardware and output quality concerns. Its code and documentation
-> are preserved for reference in `FUNCTION_2A_TRANSCRIBE_WHISPER.md`.
+> **Note:** MS Word Online is the only transcription method in OHM. OpenAI Whisper was evaluated and implemented as an automated local transcription option but was permanently removed due to licensing concerns with the model and lack of built-in speaker diarization capabilities.
 
 ## Requirements
 - **Microsoft 365 subscription** - Required for Word Online transcription feature
@@ -14,20 +11,16 @@ Provide step-by-step instructions for manual transcription using Microsoft Word 
 - **Internet connection** - Transcription happens in the cloud
 - **Modern web browser** - Chrome, Firefox, Safari, or Edge
 
-## When to Use This Mode
+## When to Use This Function
 
-Use MS Word Online mode instead of Whisper mode when:
-- You prefer Microsoft's transcription service over locally-run Whisper
-- You don't have local compute resources for Whisper
+Use MS Word Online transcription when:
+- You have a Microsoft 365 subscription
 - You want to use Word's built-in speaker identification
-- You're already comfortable with Word Online
-
-**Note:** Whisper mode is recommended for most users as it runs entirely locally and requires no subscription.
+- You're comfortable with Word Online's interface
 
 ## Usage
 
-1. Select **MS Word Online** in the **Transcription Mode** radio buttons
-2. In the **Inputs** section, click **Browse...** to select a directory containing your audio files
+1. In the **Inputs** section, click **Browse...** to select a directory containing your audio files
 3. Click **List WAV and MP3 Files** to scan the directory and all subdirectories
 4. From the **Select Audio File** dropdown, choose the MP3 file you want to transcribe
 5. **(Optional)** Enter names in the **Individuals** panel
@@ -95,14 +88,14 @@ Then:
   - Parse the DOCX transcription file
   - Extract timestamps and speaker labels from Word's format
   - Map Word's speakers to your custom speaker names (in order of appearance)
-  - Create a JSON file in Whisper format
+  - Create a JSON transcript file
 - **Speaker Name Mapping:**
   - 1st speaker in Word → 1st name in Speaker Names fields
   - 2nd speaker in Word → 2nd name in Speaker Names fields
   - etc.
   - Names are used exactly as entered (case and spaces preserved)
 - File created:
-  - `dg_<epoch>_transcript.json` - Whisper-format transcript with your speaker names
+  - `dg_<epoch>_transcript.json` - JSON transcript with your speaker names
 
 **Note:** The conversion expects Word's transcription format with timestamps like `00:00:00 Speaker` and text on following lines.
 
@@ -117,20 +110,6 @@ The instructions remind you to save files in:
 ```
 
 This is the same directory used by all other functions for consistency.
-
-## Comparison: MS Word Online vs Whisper
-
-| Feature | Whisper Mode | MS Word Online Mode |
-|---------|---------------------|----------------------------|
-| **Processing** | Local on your computer | Cloud (Microsoft servers) |
-| **Cost** | Free | Requires Microsoft 365 subscription |
-| **Privacy** | 100% local | Audio uploaded to Microsoft |
-| **Internet** | Not required (after model download) | Required |
-| **Speed** | 2-5 minutes per hour of audio | Varies, typically similar |
-| **Automation** | Fully automated | Requires manual steps |
-| **JSON Creation** | Automatic | Automatic (via Convert button) |
-| **Speaker Names** | Manual editing after | Applied during conversion |
-| **Best For** | Privacy, offline work, automation | Users with M365 subscription |
 
 ## Review Notes Integration
 
@@ -157,7 +136,7 @@ The Function 2 dialog includes a built-in **Review Notes** tab so you can record
 - Automatically parses Word's transcription format
 - Maps speakers to your custom names from the Speaker Names fields
 - Preserves exact name formatting (no automatic uppercase or underscores)
-- Creates Whisper-compatible JSON instantly
+- Creates JSON transcript instantly
 
 ### Manual JSON Creation No Longer Required
 - Previous versions required manually extracting and formatting JSON
@@ -167,7 +146,6 @@ The Function 2 dialog includes a built-in **Review Notes** tab so you can record
 ### Data Privacy
 - Your audio file is uploaded to Microsoft's servers for processing
 - Microsoft may retain your data according to their privacy policy
-- For sensitive content, consider using Function 2a (Whisper) for local processing
 
 ### File Organization
 - Keep all files for one interview in the same output directory
@@ -194,7 +172,6 @@ The Function 2 dialog includes a built-in **Review Notes** tab so you can record
 - Check audio quality (reduce background noise)
 - Ensure clear speech without excessive overlap
 - Edit the transcription manually in Word before saving
-- For better quality, try Function 2a (Whisper)
 
 ### JSON Formatting Errors
 **Problem**: Function 4 fails to read your JSON  
@@ -225,10 +202,3 @@ Example completion log:
 📝 Displayed MS Word Online instructions for: interview.mp3
 Follow the instructions to transcribe with MS Word Online
 ```
-
-## Alternative
-
-If you don't have a Microsoft 365 subscription or prefer automated transcription:
-- Use **Function 2a: Transcribe MP3 using Whisper** instead
-- Function 2a is free, runs entirely locally, and automatically creates the JSON file
-- No manual JSON creation required

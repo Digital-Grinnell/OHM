@@ -45,17 +45,6 @@ try:
 except ImportError:
     PDF_AVAILABLE = False
 
-# Transcription imports (openai-whisper)
-try:
-    import whisper
-    import torch
-    WHISPER_AVAILABLE = True
-    # Suppress FP16 warning if no GPU
-    warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
-except ImportError:
-    WHISPER_AVAILABLE = False
-    logger.warning("Transcription libraries not available. Install with: pip install openai-whisper torch torchaudio")
-
 # Configure logging
 DATA_DIR = Path.home() / "OHM-data"
 os.makedirs(DATA_DIR / "logfiles", exist_ok=True)
@@ -1328,229 +1317,6 @@ def main(page: ft.Page):
         threading.Thread(target=_run_copy_and_convert, daemon=True).start()
 
 
-    def on_function_2a_transcribe_whisper(e):
-        """Execute Function 2a: Transcribe MP3 using OpenAI Whisper"""
-        nonlocal selected_file, output_directory, current_epoch
-        
-        # Check if Whisper is available
-        if not WHISPER_AVAILABLE:
-            update_status(
-                "⚠️  Whisper not installed. Install dependencies first.",
-                is_error=True,
-            )
-            add_log_message(
-                "Whisper libraries not available. Install with:\n"
-                "pip install openai-whisper python-docx torch torchaudio"
-            )
-            return
-
-        # Check if a file is selected
-        if not selected_file:
-            update_status("Please select an audio file first", is_error=True)
-            add_log_message("No file selected. Use Inputs section to select a file.")
-            return
-
-        # Check if output directory exists
-        if not output_directory or not output_directory.exists():
-            update_status("Output directory not found. Please reselect the file.", is_error=True)
-            add_log_message("Output directory missing. Reselect the file to recreate it.")
-            return
-
-        # Check if epoch is available
-        if not current_epoch:
-            update_status("Epoch timestamp not found. Please reselect the file.", is_error=True)
-            add_log_message("Epoch timestamp missing. Reselect the file to regenerate it.")
-            return
-
-        # Resolve the MP3 to transcribe
-        mp3_filename = sanitize_filename(f"dg_{current_epoch}.mp3")
-        mp3_path = output_directory / mp3_filename
-
-        if selected_file.suffix.lower() == ".wav":
-            # WAV selected — look for the converted MP3 in the output directory
-            if mp3_path.exists():
-                audio_to_transcribe = mp3_path
-                add_log_message(f"WAV selected; using converted MP3 from output directory: {mp3_filename}")
-            else:
-                update_status(
-                    f"⚠️  No converted MP3 found for {selected_file.name}. Run Function 1 first.",
-                    is_error=True,
-                )
-                add_log_message(f"Skipped: {mp3_filename} not found in {output_directory.name}. Run Function 1 to convert.")
-                return
-        elif selected_file.suffix.lower() == ".mp3":
-            # MP3 selected — use output-directory copy, copying it there if needed
-            if mp3_path.exists():
-                audio_to_transcribe = mp3_path
-                add_log_message(f"Using MP3 from output directory: {mp3_filename}")
-            else:
-                try:
-                    add_log_message(f"Copying MP3 to output directory as {mp3_filename}...")
-                    shutil.copy2(selected_file, mp3_path)
-                    audio_to_transcribe = mp3_path
-                    add_log_message(f"✅ Copied: {mp3_filename}")
-                except Exception as ex:
-                    add_log_message(f"Warning: Could not copy MP3 to output directory: {str(ex)}. Using original.")
-                    audio_to_transcribe = selected_file
-        else:
-            update_status(
-                f"Cannot transcribe {selected_file.suffix} file. Please select a WAV or MP3 file.",
-                is_error=True,
-            )
-            add_log_message(f"Skipped: {selected_file.name} is not a WAV or MP3 file")
-            return
-
-        # Define output filenames
-        base_name = f"dg_{current_epoch}"
-        json_path = output_directory / sanitize_filename(f"{base_name}_transcript.json")
-        
-        # Check if transcription already exists
-        if json_path.exists():
-            update_status(
-                f"⚠️  Transcription JSON already exists — skipping.",
-                is_error=True,
-            )
-            add_log_message(f"Skipped: Transcription JSON already exists in {output_directory.name}")
-            return
-
-        storage.record_function_usage("function_2a_transcribe_whisper")
-        update_status(f"Transcribing {audio_to_transcribe.name} with Whisper ...")
-        add_log_message(f"Starting transcription: {audio_to_transcribe.name}")
-        page.update()
-
-        try:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            
-            # Step 1: Transcribe with OpenAI Whisper (segment-level only)
-            add_log_message(f"Loading Whisper model (base, {device})...")
-            update_status(f"Loading Whisper model...")
-            page.update()
-            
-            model = whisper.load_model("base", device=device)
-            
-            add_log_message("Transcribing audio...")
-            update_status("Transcribing audio (this may take several minutes)...")
-            page.update()
-            
-            # Custom progress callback to update UI
-            import sys
-            
-            class ProgressCapture:
-                def __init__(self):
-                    self.last_update = 0
-                    self.buffer = []
-                    
-                def write(self, text):
-                    import time
-                    # Collect output and update UI periodically
-                    if text.strip():
-                        self.buffer.append(text.strip())
-                        current_time = time.time()
-                        if current_time - self.last_update > 1:
-                            # Show the most recent meaningful output
-                            if self.buffer:
-                                display_text = self.buffer[-1]
-                                if len(display_text) > 100:
-                                    display_text = display_text[:100] + "..."
-                                update_status(f"Transcribing: {display_text}")
-                                page.update()
-                                self.last_update = current_time
-                            
-                def flush(self):
-                    pass
-            
-            # Redirect stdout temporarily to capture progress
-            old_stdout = sys.stdout
-            progress_capture = ProgressCapture()
-            sys.stdout = progress_capture
-            
-            try:
-                # Transcribe - get segment-level results
-                result = model.transcribe(
-                    str(audio_to_transcribe),
-                    language=None,  # Auto-detect
-                    verbose=True,  # Enable progress output
-                    word_timestamps=False  # No word-level data
-                )
-            finally:
-                # Restore stdout
-                sys.stdout = old_stdout
-            
-            detected_language = result.get("language", "en")
-            add_log_message(f"Language detected: {detected_language}")
-            
-            # Extract segments
-            transcript_segments = []
-            for segment in result.get("segments", []):
-                transcript_segments.append({
-                    "start": segment["start"],
-                    "end": segment["end"],
-                    "text": segment["text"]
-                })
-            
-            add_log_message(f"Transcription complete. {len(transcript_segments)} segments found.")
-            
-            # Add default speaker label to all segments
-            final_segments = []
-            for seg in transcript_segments:
-                final_segments.append({
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "text": seg["text"],
-                    "speaker": "SPEAKER_00"
-                })
-            
-            # Save JSON
-            add_log_message("Saving JSON transcript...")
-            update_status("Saving transcript JSON...")
-            page.update()
-
-            notes = build_provenance_notes(
-                method="OpenAI Whisper (local)",
-                extra={
-                    "whisper_model": "base",
-                    "detected_language": detected_language,
-                    "device": device,
-                    "segment_count": len(final_segments),
-                    "source_audio": collect_audio_file_info(audio_to_transcribe, selected_file, output_directory),
-                    **(
-                        {"permission_form": {
-                            "original_filename": selected_permission_pdf.name,
-                            "saved_as": PERMISSION_FORM_FILENAME,
-                        }}
-                        if selected_permission_pdf else {}
-                    ),
-                },
-            )
-
-            output_data = {
-                "notes": notes,
-                "language": detected_language,
-                "segments": final_segments,
-            }
-            
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(output_data, f, indent=2, ensure_ascii=False)
-            
-            add_log_message(f"✅ Created: {json_path.name}")
-            add_log_message(f"✅ Transcription complete! Language: {detected_language}")
-            add_log_message(f"✅ Segments: {len(final_segments)}")
-            add_log_message(f"✅ Output location: {output_directory}")
-            add_log_message("ℹ️  Edit the JSON file to change speaker names from SPEAKER_00, fix spelling, etc.")
-            add_log_message("ℹ️  Then use Function 3 to generate TXT and VTT outputs.")
-            
-            success_msg = f"✅ Transcription complete! {len(final_segments)} segments."
-            update_status(success_msg)
-            
-        except Exception as ex:
-            error_msg = f"❌ Transcription failed: {str(ex)}"
-            add_log_message(error_msg)
-            update_status(error_msg, is_error=True)
-            logger.error(f"Transcription error: {str(ex)}")
-        
-        page.update()
-
     def on_function_2_ms_word_online(e):
         """Provide instructions for transcription using MS Word Online."""
         nonlocal selected_file, output_directory, current_epoch
@@ -1977,7 +1743,7 @@ def main(page: ft.Page):
             for i in range(len(segments) - 1):
                 segments[i]["end"] = segments[i + 1]["start"]
             
-            # Create JSON in Whisper-compatible format
+            # Create JSON transcript
             notes = build_provenance_notes(
                 method="MS Word Online",
                 extra={
@@ -2403,7 +2169,7 @@ This report tracks the processing status of audio files from the input directory
 ## Workflow Stages
 
 1. **Audio (WAV/MP3)** - Original or converted audio
-2. **Transcription (JSON)** - Transcript from Function 2 (Whisper or MS Word)
+2. **Transcription (JSON)** - Transcript from Function 2 (MS Word Online)
 3. **Outputs (TXT, VTT, CSV, PDF)** - Final deliverables from Function 4
 
 ## Progress Legend
@@ -2668,23 +2434,8 @@ For each audio file:
 
     # -------------------------------------------------------- function metadata
 
-    # Transcription mode — MS Word Online is the only active mode.
-    # OpenAI Whisper (on_function_2a_transcribe_whisper) was evaluated and removed from the UI;
-    # its code is preserved in comments for reference.
-    transcription_mode = "MS Word Online"
-
-    # set_transcription_mode and the Whisper/Word dispatch are no longer needed now that
-    # MS Word Online is the sole mode, but kept here in comments for context.
-    # def set_transcription_mode(mode):
-    #     nonlocal transcription_mode
-    #     transcription_mode = mode
-    #     add_log_message(f"🔄 Transcription mode set to: {mode}")
-    #     update_status(f"Transcription mode: {mode}")
-
     def on_function_2_transcribe(e):
-        """Transcription function — delegates to MS Word Online (sole active mode)."""
-        # Previously dispatched to on_function_2a_transcribe_whisper when mode == "OpenAI Whisper".
-        # Whisper was removed from the UI; on_function_2a_transcribe_whisper is preserved in comments.
+        """Transcription function — uses MS Word Online."""
         on_function_2_ms_word_online(e)
 
     # Active functions - frequently used
@@ -2748,16 +2499,6 @@ For each audio file:
         func_info = functions[function_key]
         help_file = func_info.get("help_file")
         display_label = func_info['label']  # Default to function label
-        
-        # Function 2 always uses MS Word Online now; Whisper was removed from the UI.
-        # (Mode-specific help dispatch kept in comments for reference)
-        # if function_key == "function_2_transcribe":
-        #     if transcription_mode == "OpenAI Whisper":
-        #         help_file = "FUNCTION_2A_TRANSCRIBE_WHISPER.md"
-        #         display_label = "2: Transcribe with OpenAI Whisper"
-        #     else:
-        #         help_file = "FUNCTION_2B_MS_WORD_ONLINE.md"
-        #         display_label = "2: Transcribe with MS Word Online"
 
         if not help_file:
             add_log_message(f"No help file available for {display_label}")
@@ -2875,21 +2616,6 @@ For each audio file:
             },
         }
 
-        # Whisper-specific details — only relevant when Whisper was the transcription engine
-        if "whisper" in method.lower():
-            if WHISPER_AVAILABLE:
-                try:
-                    import whisper as _whisper
-                    notes["whisper_version"] = getattr(_whisper, "__version__", "unknown")
-                except Exception:
-                    notes["whisper_version"] = "unknown"
-            try:
-                import torch as _torch
-                notes["torch_version"] = _torch.__version__
-                notes["cuda_available"] = _torch.cuda.is_available()
-            except Exception:
-                pass
-
         if extra:
             notes.update(extra)
 
@@ -2907,12 +2633,6 @@ For each audio file:
 
             # Transcription method
             narrative += f" The transcription method was \"{notes['transcription_method']}\"."
-
-            # Whisper model / version
-            if "whisper_model" in notes:
-                wv = notes.get("whisper_version", "")
-                wv_str = f" (version {wv})" if wv and wv != "unknown" else ""
-                narrative += f" The Whisper model used was \"{notes['whisper_model']}\"{wv_str}, running on {notes.get('device', 'CPU')}."
 
             # MS Word URL
             if "ms_word_url" in notes:
@@ -3143,41 +2863,24 @@ For each audio file:
 
                 functions[function_key]["handler"](MockEvent())
 
-                # Refresh dropdown orders after execution
-                active_function_dropdown.options = get_sorted_function_options(
-                    active_functions
-                )
-                active_function_dropdown.value = None  # Clear selection
+                # Clear selection after execution
+                active_function_dropdown.value = None
                 page.update()
 
     def get_sorted_function_options(function_list):
-        """Get function dropdown options sorted by last use date"""
-        from datetime import datetime
+        """Get function dropdown options sorted by numeric order (0-5)"""
+        # Extract function number from key (e.g., "function_0_merge_audio" -> 0)
+        def get_function_number(func_key):
+            import re
+            match = re.search(r'function_(\d+)_', func_key)
+            return int(match.group(1)) if match else 999
 
-        usage_data = storage.get_all_function_usage()
-
-        # Create list of (function_key, last_used_timestamp)
-        function_usage = []
-        for func_key in function_list:
-            usage = usage_data.get(func_key, {})
-            last_used = usage.get("last_used")
-            # Parse ISO timestamp or use epoch start for never-used functions
-            if last_used:
-                try:
-                    timestamp = datetime.fromisoformat(last_used)
-                except:
-                    timestamp = datetime.min
-            else:
-                timestamp = datetime.min
-
-            function_usage.append((func_key, timestamp))
-
-        # Sort by timestamp (most recent first)
-        function_usage.sort(key=lambda x: x[1], reverse=True)
+        # Sort by numeric order
+        sorted_functions = sorted(function_list, key=get_function_number)
 
         # Create dropdown options
         options = []
-        for func_key, timestamp in function_usage:
+        for func_key in sorted_functions:
             func_info = functions[func_key]
             label = f"{func_info['icon']} {func_info['label']}"
             options.append(ft.dropdown.Option(key=func_key, text=label))
@@ -3328,21 +3031,6 @@ For each audio file:
                 ft.Container(
                     content=ft.Column(
                         [
-                            # Transcription Mode selector removed — MS Word Online is the only mode.
-                            # (OpenAI Whisper was evaluated but removed from the UI; see FUNCTION_2A_TRANSCRIBE_WHISPER.md)
-                            # ft.Column([
-                            #     ft.Text("Transcription Mode", size=18, weight=ft.FontWeight.BOLD),
-                            #     transcription_mode_radio := ft.RadioGroup(
-                            #         content=ft.Row([
-                            #             ft.Radio(value="OpenAI Whisper", label="OpenAI Whisper (disabled)", disabled=True),
-                            #             ft.Radio(value="MS Word Online", label="MS Word Online"),
-                            #         ], spacing=20),
-                            #         value="MS Word Online",
-                            #         on_change=lambda e: set_transcription_mode(e.control.value),
-                            #     ),
-                            # ], spacing=5),
-                            # ft.Container(height=10),  # Spacer
-                            
                             ft.Row(
                                 [
                                     ft.Column(
@@ -3361,7 +3049,7 @@ For each audio file:
                                             ft.Container(height=5),
                                             active_function_dropdown := ft.Dropdown(
                                                 label="Select Function to Execute",
-                                                hint_text="Functions ordered by most recently used",
+                                                hint_text="Functions in workflow order (0-5)",
                                                 width=500,
                                                 options=[],
                                                 on_change=lambda e: execute_selected_function(

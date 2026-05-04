@@ -4,23 +4,21 @@ OHM is a desktop application built with Flet that streamlines the creation and p
 
 ## Features
 
+### Function 0: Merge Audio Files (Optional)
+- Concatenates multiple WAV or MP3 files into a single recording
+- Useful when recordings are split across multiple files
+- Preserves file order and quality
+- Automatically archives source files after merge
+- Creates merge provenance JSON sidecar file
+- Requires FFmpeg
+
 ### Function 1: Convert WAV to MP3
 - Converts large WAV audio files to compressed MP3 format
 - Uses FFmpeg for high-quality conversion
 - Preserves audio quality while reducing file size
 - Required for files that need to be uploaded to transcription services
 
-### Function 2: Transcribe with Selected Mode
-Choose between two transcription methods:
-
-#### OpenAI Whisper Mode (Automatic)
-- **Local processing** - runs entirely on your machine
-- **Automated transcription** using OpenAI's Whisper model
-- Generates timestamped segments with speaker labels (default: SPEAKER_00)
-- Creates JSON output ready for editing
-- No cloud services or subscriptions required
-
-#### MS Word Online Mode (Manual)
+### Function 2: Transcribe with MS Word Online
 - **Cloud-based** Microsoft transcription service
 - **Requires Microsoft 365 subscription**
 - Uses Word's built-in Transcribe feature
@@ -28,6 +26,8 @@ Choose between two transcription methods:
 - Includes **automated DOCX to JSON conversion** with button click
 - Automatically maps Word speaker labels to your custom speaker names
 - Dialog has two tabs: **📝 MS Word Instructions** and **📋 Review Notes** — take notes without leaving the transcription dialog
+
+> **Note on Whisper:** OpenAI's Whisper transcription was evaluated and implemented as an automated local transcription option but ultimately removed from OHM due to licensing concerns with the model and lack of built-in speaker diarization capabilities. MS Word Online, while requiring a subscription, provides superior speaker identification and meets the needs of the oral history workflow.
 
 ### Function 3: Edit Review Notes
 - Opens an in-app Markdown editor for the selected oral history
@@ -64,12 +64,6 @@ Choose between two transcription methods:
 - Helps track project progress over time
 
 ## Additional Features
-
-### Transcription Mode Selection
-- **Radio button interface** to select transcription method
-- Choice persists during session
-- Help documentation adapts to selected mode
-- Seamless switching between Whisper and MS Word workflows
 
 ### Working/Output Directory
 - **User-selectable** output location separate from the input directory
@@ -121,9 +115,6 @@ See [Distribution & DMG](#distribution--dmg) below for pre-built installer instr
 ### Python Dependencies
 All dependencies are installed automatically by `run.sh`:
 - `flet==0.25.2` - Desktop UI framework
-- `openai-whisper` - Automatic transcription
-- `torch>=2.0.0` - Machine learning backend for Whisper
-- `torchaudio>=2.0.0` - Audio processing
 - `python-docx` - DOCX file parsing
 - `reportlab` - PDF generation
 
@@ -133,6 +124,12 @@ All dependencies are installed automatically by `run.sh`:
 ## Workflow
 
 ### Complete Oral History Processing Workflow
+
+0. **Merge Audio Files** (optional)
+   - If your recording is split across multiple files, run **Function 0** first
+   - Select files in the correct order and merge them
+   - Source files are automatically moved to a `Merged/` subdirectory
+   - The merged file becomes your new source file
 
 1. **Select Input Directory**
    - Browse to folder containing WAV or MP3 audio files
@@ -150,14 +147,12 @@ All dependencies are installed automatically by `run.sh`:
    - MP3s are required for cloud transcription services
    - Skip this step if you already have MP3 files
 
-3. **Choose Transcription Mode**
-   - Select **OpenAI Whisper** for automated local processing
-   - Select **MS Word Online** for manual cloud-based transcription
+3. **Choose Transcription Method**
+   - Use **Function 2** for MS Word Online transcription
 
 4. **Transcribe Audio**
    - Run **Function 2** to create initial transcript
-   - **Whisper**: Automatic processing, creates JSON directly
-   - **MS Word Online**: Follow instructions, download DOCX, click "Convert to JSON"
+   - Follow MS Word Online instructions, download DOCX, click "Convert to JSON"
 
 5. **Edit Transcript JSON**
    - Open the generated `dg_<epoch>_transcript.json` file
@@ -276,8 +271,8 @@ Thank you for having me.
 
 Each function has detailed help documentation accessible via Help Mode:
 
+- **FUNCTION_0_MERGE_AUDIO.md** - Audio merging guide (optional preprocessing)
 - **FUNCTION_1_WAV_TO_MP3.md** - Audio conversion guide
-- **FUNCTION_2A_TRANSCRIBE_WHISPER.md** - Whisper transcription guide (deprecated; preserved for reference)
 - **FUNCTION_2_MS_WORD_ONLINE.md** - MS Word Online transcription guide
 - **FUNCTION_3_REVIEW_NOTES.md** - Review notes editor guide
 - **FUNCTION_4_GENERATE_OUTPUTS.md** - Output generation guide
@@ -285,8 +280,9 @@ Each function has detailed help documentation accessible via Help Mode:
 
 ## Privacy & Local Processing
 
-- **Functions 1, 2 (Whisper), 4, and 5** run entirely locally
-- **No audio or text is uploaded to external servers** (except MS Word Online mode)
+- **Functions 0, 1, 4, and 5** run entirely locally
+- **Function 3** also runs entirely locally (Markdown editor)
+- **No audio or text is uploaded to external servers** except via MS Word Online (Function 2)
 - **Function 2 (MS Word Online)** uses Microsoft's cloud service
 - All processing preserves original files
 - Speaker names and settings stored locally in JSON
@@ -297,11 +293,6 @@ Each function has detailed help documentation accessible via Help Mode:
 ```bash
 brew install ffmpeg
 ```
-
-### Whisper Not Working
-- Ensure `torch` and `torchaudio` are installed
-- Check that you have sufficient disk space for the Whisper model (~140MB)
-- First run downloads the model automatically
 
 ### MS Word Transcription Issues
 - Ensure you have an active Microsoft 365 subscription
@@ -370,7 +361,6 @@ Dependencies are cached in the virtual environment; startup is fast after the fi
 ### Notes
 
 - Generated DMG files are excluded from version control via `.gitignore`
-- The `.env` file (containing `HF_TOKEN`) is intentionally **not** bundled for security reasons — recipients who need speaker diarization must create their own `.env` in the app's `src/` directory after installation
 - The app's `src/` directory (`OHM.app/Contents/Resources/src/`) can be opened in Finder to access or edit source files directly
 
 ---
@@ -379,7 +369,6 @@ Dependencies are cached in the virtual environment; startup is fast after the fi
 
 The application uses:
 - **Flet** for the desktop UI framework
-- **OpenAI Whisper** for automated transcription
 - **python-docx** for DOCX file parsing
 - **reportlab** for PDF generation
 - **Persistent storage** via JSON for settings and usage tracking
@@ -406,42 +395,4 @@ For questions or issues, please refer to the function-specific help documentatio
 
 ## Changelog
 
-### 2026-04-16
-
-#### Bug fix — MP3 source file not copied to output directory (Functions 2a & 2b)
-
-When a workflow starts from an MP3 file (rather than a WAV), Function 1 (WAV-to-MP3
-conversion) is correctly skipped, but the standardised `dg_<epoch>.mp3` file was never
-created in the output directory.  Functions 2a and 2b then couldn't find it there and,
-in Function 2a's case, silently fell back to transcribing from the original source path
-instead of the output-directory copy, contrary to the documented behaviour.
-
-**Fix (`app.py`):** In both `on_function_2a_transcribe_whisper` and
-`on_function_2b_ms_word_online`, when an MP3 is selected and `dg_<epoch>.mp3` does not
-yet exist in the output directory, `shutil.copy2` now copies it there before proceeding.
-A warning is logged and the original path is used as a fallback if the copy fails.
-
-#### Feature — OpenAI Whisper removed from the UI; MS Word Online is the sole transcription method
-
-OpenAI Whisper (Function 2a) was evaluated as an automated local transcription option
-but was removed from the OHM interface due to slow performance on CPU-only hardware and
-output quality concerns relative to MS Word Online's cloud service.
-
-**Changes (`app.py`):**
-- The **Transcription Mode** radio-button selector (Whisper / MS Word Online) has been
-  removed from the Functions panel UI; the widget code is preserved in comments.
-- `set_transcription_mode()` and the Whisper/Word dispatch in `on_function_2_transcribe`
-  are commented out; the function now unconditionally calls `on_function_2b_ms_word_online`.
-- `on_function_2a_transcribe_whisper` itself is preserved in full (commented out) for
-  future reference.
-- The Function 2 dropdown label changed from `"2: Transcribe with Selected Mode"` to
-  `"2: Transcribe with MS Word Online"`, and its help file is now set directly to
-  `FUNCTION_2B_MS_WORD_ONLINE.md` (no longer mode-dependent at runtime).
-- The mode-dispatching block inside `show_help_dialog()` is commented out.
-
-**Changes (documentation):**
-- `FUNCTION_2A_TRANSCRIBE_WHISPER.md` — stale radio-button note replaced with a
-  *Development note* blockquote recording why Whisper was removed and where the code lives.
-- `FUNCTION_2B_MS_WORD_ONLINE.md` — stale radio-button note replaced with a *Note*
-  blockquote confirming MS Word Online is the sole active method and pointing to the 2A
-  doc for Whisper history.
+For a complete history of changes, new features, and bug fixes, see [CHANGELOG.md](CHANGELOG.md).
