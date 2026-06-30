@@ -74,6 +74,9 @@ PERSISTENCE_FILE = DATA_DIR / "persistent.json"
 # Filename used when copying a permission/consent PDF into an output directory
 PERMISSION_FORM_FILENAME = "permission_form.pdf"
 
+# Audio formats that OHM should recognize as selectable source files.
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".mp4")
+
 
 class PersistentStorage:
     """Handle persistent storage of UI state and function usage."""
@@ -339,7 +342,7 @@ def main(page: ft.Page):
     # Input directory text field
     input_directory_field = ft.TextField(
         label="Input Directory",
-        hint_text="Select a directory containing WAV/MP3 files",
+        hint_text="Select a directory containing audio files",
         width=600,
         read_only=True,
         value=""
@@ -535,7 +538,7 @@ def main(page: ft.Page):
         )
 
     def _scan_audio_files():
-        """Scan the current input directory for WAV/MP3 files and populate the dropdown."""
+        """Scan the current input directory for recognized audio files and populate the dropdown."""
         nonlocal audio_files
         if not current_directory or not current_directory.exists():
             return
@@ -543,16 +546,16 @@ def main(page: ft.Page):
             audio_files = [
                 f for f in current_directory.rglob("*")
                 if f.is_file()
-                and f.suffix.lower() in (".wav", ".mp3")
+                and f.suffix.lower() in AUDIO_EXTENSIONS
                 and "Merged" not in f.relative_to(current_directory).parts
             ]
             audio_files.sort(key=lambda p: str(p.relative_to(current_directory)).lower())
 
             if not audio_files:
-                update_status("No WAV or MP3 files found in directory or subdirectories", is_error=True)
+                update_status("No audio files found in directory or subdirectories", is_error=True)
                 add_log_message(f"No audio files found in {current_directory} or its subdirectories")
                 file_selection_field.value = ""
-                file_selection_field.hint_text = "No audio files found in selected directory"
+                file_selection_field.hint_text = "No recognized audio files found in selected directory"
                 page.update()
                 return
 
@@ -565,7 +568,7 @@ def main(page: ft.Page):
             add_log_message(f"Error listing files: {str(ex)}")
 
     def on_list_files_click(e):
-        """List all WAV and MP3 files in the selected directory and subdirectories."""
+        """List all recognized audio files in the selected directory and subdirectories."""
         nonlocal audio_files
         
         if not current_directory or not current_directory.exists():
@@ -574,11 +577,11 @@ def main(page: ft.Page):
             return
 
         try:
-            # Find all WAV and MP3 files recursively, excluding any Merged/ subdirectories
+            # Find all recognized audio files recursively, excluding any Merged/ subdirectories
             audio_files = [
                 f for f in current_directory.rglob("*")
                 if f.is_file()
-                and f.suffix.lower() in (".wav", ".mp3")
+                and f.suffix.lower() in AUDIO_EXTENSIONS
                 and "Merged" not in f.relative_to(current_directory).parts
             ]
             
@@ -586,10 +589,10 @@ def main(page: ft.Page):
             audio_files.sort(key=lambda p: str(p.relative_to(current_directory)).lower())
 
             if not audio_files:
-                update_status("No WAV or MP3 files found in directory or subdirectories", is_error=True)
+                update_status("No audio files found in directory or subdirectories", is_error=True)
                 add_log_message(f"No audio files found in {current_directory} or its subdirectories")
                 file_selection_field.value = ""
-                file_selection_field.hint_text = "No audio files found in selected directory"
+                file_selection_field.hint_text = "No recognized audio files found in selected directory"
                 page.update()
                 return
 
@@ -812,10 +815,10 @@ def main(page: ft.Page):
             add_log_message("ffmpeg not installed. Install via: brew install ffmpeg (macOS)")
             return
 
-        # Find WAV and MP3 files in current directory only (not subdirectories)
+        # Find recognized audio files in current directory only (not subdirectories)
         dir_audio_files = sorted(
             [f for f in current_directory.iterdir()
-             if f.is_file() and f.suffix.lower() in (".wav", ".mp3")],
+             if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS],
             key=lambda p: p.name.lower(),
         )
 
@@ -919,7 +922,13 @@ def main(page: ft.Page):
             # Auto-update output filename when it still looks auto-generated
             auto = compute_output_name()
             current_val = output_name_field.value or ""
-            if not current_val or current_val.endswith("_MERGED.wav") or current_val.endswith("_MERGED.mp3"):
+            if (
+                not current_val
+                or current_val.endswith("_MERGED.wav")
+                or current_val.endswith("_MERGED.mp3")
+                or current_val.endswith("_MERGED.m4a")
+                or current_val.endswith("_MERGED.mp4")
+            ):
                 output_name_field.value = auto
             page.update()
 
@@ -991,7 +1000,7 @@ def main(page: ft.Page):
                     tmp_path = tmp.name
 
                 # Use stream copy when all inputs share the same container format;
-                # re-encode when mixing WAV/MP3 or when the output format differs.
+                # re-encode when mixing formats or when the output format differs.
                 if not mixed_formats and list(exts)[0] == output_ext:
                     codec_args = ["-c", "copy"]
                 elif output_ext == ".mp3":
@@ -1347,12 +1356,12 @@ def main(page: ft.Page):
                     audio_to_transcribe = selected_file
         
         # Otherwise use selected MP3 file
-        if not audio_to_transcribe and selected_file.suffix.lower() == '.mp3':
+        if not audio_to_transcribe and selected_file.suffix.lower() in AUDIO_EXTENSIONS:
             audio_to_transcribe = selected_file
         
         if not audio_to_transcribe:
-            update_status("⚠️  No MP3 file available. Use Function 1 to convert WAV to MP3 first.", is_error=True)
-            add_log_message("No MP3 file found for transcription")
+            update_status("⚠️  No audio file available. Use Function 1 to convert WAV to MP3 first, or select a supported audio file.", is_error=True)
+            add_log_message("No supported audio file found for transcription")
             return
 
         storage.record_function_usage("function_2_ms_word_online")
@@ -2098,7 +2107,7 @@ def main(page: ft.Page):
             for file_path in current_directory.rglob("*"):
                 if (
                     file_path.is_file()
-                    and file_path.suffix.lower() in (".wav", ".mp3")
+                    and file_path.suffix.lower() in AUDIO_EXTENSIONS
                     and "Merged" not in file_path.relative_to(current_directory).parts
                 ):
                     stem = file_path.stem
